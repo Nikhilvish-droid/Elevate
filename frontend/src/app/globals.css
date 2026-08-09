@@ -9,9 +9,8 @@
   --brand-deep: #0a4f49;
   --line: #d5e0dc;
   --accent-soft: #e8f3f1;
-  --hero-glow: rgba(15, 107, 99, 0.12);
-  --font-display: var(--font-syne), ui-sans-serif, sans-serif;
-  --font-body: var(--font-dm-sans), ui-sans-serif, sans-serif;
+  --font-display: var(--font-outfit), ui-sans-serif, sans-serif;
+  --font-body: var(--font-source), ui-sans-serif, sans-serif;
 }
 
 .dark {
@@ -23,12 +22,19 @@
   --brand-deep: #14b8a6;
   --line: #243330;
   --accent-soft: #16302c;
-  --hero-glow: rgba(45, 212, 191, 0.1);
 }
 
 @theme inline {
   --color-background: var(--bg);
   --color-foreground: var(--ink);
+  --color-surface: var(--bg);
+  --color-elevated: var(--bg-elevated);
+  --color-ink: var(--ink);
+  --color-muted: var(--ink-muted);
+  --color-brand: var(--brand);
+  --color-brand-deep: var(--brand-deep);
+  --color-line: var(--line);
+  --color-soft: var(--accent-soft);
   --font-sans: var(--font-body);
 }
 
@@ -51,17 +57,6 @@ body {
   font-family: var(--font-display);
 }
 
-.circuit-bg {
-  background-color: var(--bg);
-  background-image:
-    radial-gradient(ellipse 70% 50% at 50% 0%, var(--hero-glow), transparent 60%),
-    linear-gradient(var(--line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--line) 1px, transparent 1px);
-  background-size: auto, 48px 48px, 48px 48px;
-  background-position: center, center, center;
-  mask-image: radial-gradient(ellipse 80% 70% at 50% 35%, black 20%, transparent 75%);
-}
-
 @keyframes rise-in {
   from {
     opacity: 0;
@@ -71,37 +66,6 @@ body {
     opacity: 1;
     transform: translateY(0);
   }
-}
-
-@keyframes draw-line {
-  from {
-    stroke-dashoffset: 240;
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
-.animate-rise {
-  animation: rise-in 0.7s ease-out both;
-}
-
-.animate-rise-delay-1 {
-  animation: rise-in 0.7s ease-out 0.12s both;
-}
-
-.animate-rise-delay-2 {
-  animation: rise-in 0.7s ease-out 0.24s both;
-}
-
-.animate-rise-delay-3 {
-  animation: rise-in 0.7s ease-out 0.36s both;
-}
-
-.circuit-path {
-  stroke-dasharray: 240;
-  stroke-dashoffset: 240;
-  animation: draw-line 1.6s ease-out 0.4s forwards;
 }
 
 @keyframes stage-in {
@@ -122,6 +86,14 @@ body {
   to {
     transform: scaleX(1);
   }
+}
+
+.animate-rise {
+  animation: rise-in 0.7s ease-out both;
+}
+
+.animate-rise-delay-1 {
+  animation: rise-in 0.7s ease-out 0.12s both;
 }
 
 .stage-chip {

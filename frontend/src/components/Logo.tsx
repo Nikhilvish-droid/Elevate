@@ -2,7 +2,6 @@ import Image from "next/image";
 
 type LogoProps = {
   className?: string;
-  /** Prefer PNG wordmark when available; falls back to SVG mark + text. */
   variant?: "image" | "mark";
 };
 
@@ -26,7 +25,7 @@ export default function Logo({ className = "", variant = "image" }: LogoProps) {
     >
       <svg
         viewBox="0 0 40 40"
-        className="h-[1.1em] w-[1.1em] shrink-0 text-[var(--brand)]"
+        className="h-[1.1em] w-[1.1em] shrink-0 text-brand"
         aria-hidden
       >
         <path
@@ -39,8 +38,8 @@ export default function Logo({ className = "", variant = "image" }: LogoProps) {
         />
       </svg>
       <span>
-        <span className="text-[var(--brand)]">E</span>
-        <span className="text-[var(--ink)]">levate</span>
+        <span className="text-brand">E</span>
+        <span className="text-ink">levate</span>
       </span>
     </span>
   );

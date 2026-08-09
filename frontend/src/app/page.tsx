@@ -123,34 +123,34 @@ export default function Home() {
   function goHireSearch(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const q = candidateQuery.trim();
-    const params = new URLSearchParams({ role: "company" });
+    const params = new URLSearchParams();
+    params.set("hint", "company");
     if (q) params.set("q", q);
-    params.set("intent", "search-candidates");
-    router.push(`/signup?${params.toString()}`);
+    router.push(`/auth?tab=signup&${params.toString()}`);
   }
 
   function goJobSearch(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const q = jobQuery.trim();
-    const params = new URLSearchParams({ role: "candidate" });
+    const params = new URLSearchParams();
+    params.set("hint", "candidate");
     if (q) params.set("q", q);
-    params.set("intent", "search-jobs");
-    router.push(`/signup?${params.toString()}`);
+    router.push(`/auth?tab=signup&${params.toString()}`);
   }
 
   return (
     <>
       <a
         href="#main"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-[var(--brand)] focus:px-3 focus:py-2 focus:text-white"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-brand focus:px-3 focus:py-2 focus:text-white"
       >
         Skip to content
       </a>
 
-      <header className="sticky top-0 z-40 border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--bg)_88%,transparent)] backdrop-blur-md">
-        <div className="mx-auto flex h-20 max-w-6xl items-center justify-between px-5 sm:px-8">
+      <header className="sticky top-0 z-40 border-b border-line bg-surface/90 backdrop-blur-md">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5 sm:px-8">
           <Link href="/" aria-label="Elevate home" className="flex items-center">
-            <Logo className="h-12 sm:h-14" />
+            <Logo className="h-9 sm:h-10" />
           </Link>
 
           <nav className="hidden items-center gap-8 md:flex" aria-label="Primary">
@@ -158,7 +158,7 @@ export default function Home() {
               <a
                 key={l.href}
                 href={l.href}
-                className="text-sm font-medium text-[var(--ink-muted)] transition hover:text-[var(--ink)]"
+                className="text-sm font-medium text-muted transition hover:text-ink"
               >
                 {l.label}
               </a>
@@ -169,20 +169,20 @@ export default function Home() {
             <button
               type="button"
               onClick={toggleTheme}
-              className="rounded-md border border-[var(--line)] px-3 py-1.5 text-sm text-[var(--ink-muted)] hover:text-[var(--ink)]"
+              className="rounded-md border border-line px-3 py-1.5 text-sm text-muted hover:text-ink"
               aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
             >
               {dark ? "Light" : "Dark"}
             </button>
             <Link
-              href="/login"
-              className="text-sm font-medium text-[var(--ink-muted)] hover:text-[var(--ink)]"
+              href="/auth?tab=login"
+              className="relative z-10 text-sm font-medium text-muted hover:text-ink"
             >
               Log in
             </Link>
             <Link
-              href="/signup"
-              className="rounded-md bg-[var(--brand)] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[var(--brand-deep)]"
+              href="/auth?tab=signup"
+              className="relative z-10 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-deep"
             >
               Sign up
             </Link>
@@ -190,7 +190,7 @@ export default function Home() {
 
           <button
             type="button"
-            className="rounded-md border border-[var(--line)] px-3 py-1.5 text-sm md:hidden"
+            className="rounded-md border border-line px-3 py-1.5 text-sm md:hidden"
             onClick={() => setMenuOpen((v) => !v)}
             aria-expanded={menuOpen}
             aria-controls="mobile-nav"
@@ -202,7 +202,7 @@ export default function Home() {
         {menuOpen && (
           <div
             id="mobile-nav"
-            className="border-t border-[var(--line)] px-5 py-4 md:hidden"
+            className="border-t border-line px-5 py-4 md:hidden"
           >
             <div className="flex flex-col gap-3">
               {navLinks.map((l) => (
@@ -210,7 +210,7 @@ export default function Home() {
                   key={l.href}
                   href={l.href}
                   onClick={() => setMenuOpen(false)}
-                  className="text-sm font-medium text-[var(--ink-muted)]"
+                  className="text-sm font-medium text-muted"
                 >
                   {l.label}
                 </a>
@@ -222,12 +222,12 @@ export default function Home() {
               >
                 {dark ? "Light mode" : "Dark mode"}
               </button>
-              <Link href="/login" className="text-sm font-medium">
+              <Link href="/auth?tab=login" className="text-sm font-medium">
                 Log in
               </Link>
               <Link
-                href="/signup"
-                className="rounded-md bg-[var(--brand)] px-4 py-2 text-center text-sm font-semibold text-white"
+                href="/auth?tab=signup"
+                className="rounded-md bg-brand px-4 py-2 text-center text-sm font-semibold text-white"
               >
                 Sign up
               </Link>
@@ -237,15 +237,21 @@ export default function Home() {
       </header>
 
       <main id="main">
-        {/* Image hero — text left, image right */}
-        <section className="relative overflow-hidden bg-[var(--bg)] px-5 py-12 sm:px-8 sm:py-16">
-          <div className="relative z-10 mx-auto grid max-w-6xl items-center gap-10 lg:grid-cols-2 lg:gap-14">
-            <div className="animate-rise flex flex-col items-center justify-center text-center">
-              <h1 className="font-display text-4xl font-extrabold tracking-tight text-[var(--brand-deep)] dark:text-[var(--brand)] sm:text-5xl">
+        <section className="relative bg-surface px-5 py-14 sm:px-8 sm:py-20">
+          <div className="relative z-10 mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-2 lg:gap-16">
+            <div className="animate-rise text-center lg:text-left">
+              <p className="font-display sm:text-2xl font-bold tracking-[0.2em] text-brand uppercase">
                 Elevate
+              </p>
+              <h1 className="mt-4 font-display text-4xl font-extrabold leading-[1.12] tracking-tight text-ink sm:text-6xl">
+                Where great companies{" "}
+                <span className="text-brand-deep italic dark:text-brand">
+                  meet great people.
+                </span>
               </h1>
-              <p className="mx-auto mt-4 max-w-md text-base text-[var(--ink-muted)] sm:text-lg">
-                Hire talent or find your next role — two sides, one desk.
+              <p className="mx-auto mt-5 max-w-lg text-base leading-relaxed text-muted sm:text-lg lg:mx-0">
+                AI recruiting for modern teams — post roles, score resumes, and
+                hire faster. Or find your next job.
               </p>
             </div>
 
@@ -264,22 +270,23 @@ export default function Home() {
             </div>
           </div>
         </section>
-
-        {/* Two paths — outside / below the image */}
-        <section className="border-t border-[var(--line)] bg-[var(--bg)] py-16 sm:py-20">
-          <div className="mx-auto grid max-w-6xl gap-10 px-5 sm:px-8 lg:grid-cols-2 lg:gap-14">
-            <div className="border-t border-[var(--line)] pt-6">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--brand)]">
-                For companies / recruiters
+        <section className="border-t border-line bg-surface px-5 py-12 sm:px-8 sm:py-16">
+          <div className="mx-auto grid max-w-6xl gap-5 lg:grid-cols-2">
+            <div className="flex flex-col border border-line bg-elevated px-6 py-8 sm:px-8 sm:py-10">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-brand">
+                For companies
               </p>
-              <h2 className="mt-2 font-display text-xl font-semibold text-[var(--brand-deep)] dark:text-[var(--brand)] sm:text-2xl">
-                Hire candidates
+              <h2 className="mt-3 font-display text-2xl font-bold tracking-tight text-ink sm:text-3xl">
+                Find your{" "}
+                <span className="text-brand-deep dark:text-brand">
+                  next hire.
+                </span>
               </h2>
-              <p className="mt-2 text-sm leading-relaxed text-[var(--ink-muted)]">
-                Search candidates by skill or role. Building a team? Create
-                your company profile.
+              <p className="mt-3 flex-1 text-sm leading-relaxed text-muted">
+                Search candidates, create a company profile, and run hiring
+                with AI match scores and a clear pipeline.
               </p>
-              <form onSubmit={goHireSearch} className="mt-5 flex gap-2">
+              <form onSubmit={goHireSearch} className="mt-6 flex gap-2">
                 <label className="sr-only" htmlFor="candidate-search">
                   Search candidates
                 </label>
@@ -288,35 +295,38 @@ export default function Home() {
                   value={candidateQuery}
                   onChange={(e) => setCandidateQuery(e.target.value)}
                   placeholder="Search candidates…"
-                  className="min-w-0 flex-1 rounded-md border border-[var(--line)] bg-[var(--bg-elevated)] px-3 py-2.5 text-sm outline-none focus:border-[var(--brand)]"
+                  className="min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-brand"
                 />
                 <button
                   type="submit"
-                  className="shrink-0 rounded-md bg-[var(--brand)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--brand-deep)]"
+                  className="shrink-0 rounded-md bg-brand px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-deep"
                 >
                   Search
                 </button>
               </form>
               <Link
-                href="/signup?role=company&intent=create-company"
-                className="mt-4 inline-flex text-sm font-semibold text-[var(--brand)] underline-offset-4 hover:underline"
+                href="/auth?tab=signup&hint=company"
+                className="mt-5 inline-flex w-fit rounded-md bg-brand px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-deep"
               >
-                Create company profile →
+                Start hiring →
               </Link>
             </div>
 
-            <div className="border-t border-[var(--line)] pt-6">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--brand)]">
+            <div className="flex flex-col border border-line bg-soft px-6 py-8 sm:px-8 sm:py-10">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-brand">
                 For candidates
               </p>
-              <h2 className="mt-2 font-display text-xl font-semibold text-[var(--brand-deep)] dark:text-[var(--brand)] sm:text-2xl">
-                Find jobs
+              <h2 className="mt-3 font-display text-2xl font-bold tracking-tight text-ink sm:text-3xl">
+                Find your{" "}
+                <span className="text-brand-deep dark:text-brand">
+                  next job.
+                </span>
               </h2>
-              <p className="mt-2 text-sm leading-relaxed text-[var(--ink-muted)]">
-                Search jobs and companies that are hiring. New here? Create
-                your candidate profile.
+              <p className="mt-3 flex-1 text-sm leading-relaxed text-muted">
+                Search open roles and companies that are hiring. Build a
+                profile and apply in one place.
               </p>
-              <form onSubmit={goJobSearch} className="mt-5 flex gap-2">
+              <form onSubmit={goJobSearch} className="mt-6 flex gap-2">
                 <label className="sr-only" htmlFor="job-search">
                   Search jobs and companies
                 </label>
@@ -325,20 +335,20 @@ export default function Home() {
                   value={jobQuery}
                   onChange={(e) => setJobQuery(e.target.value)}
                   placeholder="Search jobs & companies…"
-                  className="min-w-0 flex-1 rounded-md border border-[var(--line)] bg-[var(--bg-elevated)] px-3 py-2.5 text-sm outline-none focus:border-[var(--brand)]"
+                  className="min-w-0 flex-1 rounded-md border border-line bg-elevated px-3 py-2.5 text-sm outline-none focus:border-brand"
                 />
                 <button
                   type="submit"
-                  className="shrink-0 rounded-md bg-[var(--brand)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--brand-deep)]"
+                  className="shrink-0 rounded-md bg-brand px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-deep"
                 >
                   Search
                 </button>
               </form>
               <Link
-                href="/signup?role=candidate&intent=create-profile"
-                className="mt-4 inline-flex text-sm font-semibold text-[var(--brand)] underline-offset-4 hover:underline"
+                href="/auth?tab=signup&hint=candidate"
+                className="mt-5 inline-flex w-fit rounded-md bg-brand px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-deep"
               >
-                Create candidate profile →
+                Browse jobs →
               </Link>
             </div>
           </div>
@@ -346,13 +356,13 @@ export default function Home() {
 
         <section
           id="workflow"
-          className="border-t border-[var(--line)] py-20 sm:py-28"
+          className="border-t border-line py-20 sm:py-28"
         >
           <div className="mx-auto max-w-6xl px-5 sm:px-8">
             <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">
               The hiring board, not a spreadsheet
             </h2>
-            <p className="mt-3 max-w-2xl text-[var(--ink-muted)]">
+            <p className="mt-3 max-w-2xl text-muted">
               Every candidate moves through the same stages. Recruiters drag;
               managers see where the funnel stalls.
             </p>
@@ -364,13 +374,13 @@ export default function Home() {
               {pipelineStages.map((stage, i) => (
                 <div
                   key={stage}
-                  className="stage-chip shrink-0 border border-[var(--line)] bg-[var(--bg-elevated)] px-4 py-3"
+                  className="stage-chip shrink-0 border border-line bg-elevated px-4 py-3"
                   style={{ animationDelay: `${0.05 * i}s` }}
                 >
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--ink-muted)]">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">
                     Stage {i + 1}
                   </p>
-                  <p className="mt-1 font-display text-sm font-semibold text-[var(--brand-deep)] dark:text-[var(--brand)]">
+                  <p className="mt-1 font-display text-sm font-semibold text-brand-deep dark:text-brand">
                     {stage}
                   </p>
                 </div>
@@ -382,7 +392,7 @@ export default function Home() {
                 <h3 className="font-display text-xl font-semibold">
                   AI match before the shortlist meeting
                 </h3>
-                <p className="mt-3 max-w-xl text-sm leading-relaxed text-[var(--ink-muted)]">
+                <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted">
                   Parse the resume once. Score it against the job. Show what
                   already fits and what is still missing — so screening is
                   evidence, not gut feel.
@@ -390,37 +400,37 @@ export default function Home() {
               </div>
 
               <div
-                className="match-panel border border-[var(--line)] bg-[var(--bg-elevated)] p-6"
+                className="match-panel border border-line bg-elevated p-6"
                 aria-label="Example AI match result"
               >
                 <div className="flex items-baseline justify-between gap-4">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-muted)]">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted">
                       Full Stack Engineer
                     </p>
                     <p className="mt-1 font-display text-lg font-semibold">
                       Ananya Sharma
                     </p>
                   </div>
-                  <p className="match-score font-display text-4xl font-bold text-[var(--brand)]">
+                  <p className="match-score font-display text-4xl font-bold text-brand">
                     87%
                   </p>
                 </div>
-                <div className="mt-6 h-1.5 overflow-hidden bg-[var(--accent-soft)]">
-                  <div className="match-bar h-full w-[87%] bg-[var(--brand)]" />
+                <div className="mt-6 h-1.5 overflow-hidden bg-soft">
+                  <div className="match-bar h-full w-[87%] bg-brand" />
                 </div>
                 <dl className="mt-6 grid gap-4 text-sm sm:grid-cols-2">
                   <div>
-                    <dt className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-muted)]">
+                    <dt className="text-xs font-semibold uppercase tracking-wider text-muted">
                       Strong
                     </dt>
-                    <dd className="mt-1 text-[var(--ink)]">React · Node.js</dd>
+                    <dd className="mt-1 text-ink">React · Node.js</dd>
                   </div>
                   <div>
-                    <dt className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-muted)]">
+                    <dt className="text-xs font-semibold uppercase tracking-wider text-muted">
                       Missing
                     </dt>
-                    <dd className="mt-1 text-[var(--ink)]">AWS · Docker</dd>
+                    <dd className="mt-1 text-ink">AWS · Docker</dd>
                   </div>
                 </dl>
               </div>
@@ -430,23 +440,23 @@ export default function Home() {
 
         <section
           id="features"
-          className="border-t border-[var(--line)] bg-[var(--accent-soft)] py-20 sm:py-28"
+          className="border-t border-line bg-soft py-20 sm:py-28"
         >
           <div className="mx-auto max-w-6xl px-5 sm:px-8">
             <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">
               What Elevate covers
             </h2>
-            <p className="mt-3 max-w-2xl text-[var(--ink-muted)]">
+            <p className="mt-3 max-w-2xl text-muted">
               From the job post to the signed offer — modules built around how
               campus and startup hiring actually runs.
             </p>
             <ul className="mt-14 grid gap-10 sm:grid-cols-2 lg:grid-cols-3">
               {features.map((f) => (
-                <li key={f.title} className="border-t border-[var(--line)] pt-6">
-                  <h3 className="font-display text-lg font-semibold text-[var(--brand-deep)] dark:text-[var(--brand)]">
+                <li key={f.title} className="border-t border-line pt-6">
+                  <h3 className="font-display text-lg font-semibold text-brand-deep dark:text-brand">
                     {f.title}
                   </h3>
-                  <p className="mt-2 text-sm leading-relaxed text-[var(--ink-muted)]">
+                  <p className="mt-2 text-sm leading-relaxed text-muted">
                     {f.body}
                   </p>
                 </li>
@@ -457,23 +467,23 @@ export default function Home() {
 
         <section
           id="roles"
-          className="border-t border-[var(--line)] py-20 sm:py-28"
+          className="border-t border-line py-20 sm:py-28"
         >
           <div className="mx-auto max-w-6xl px-5 sm:px-8">
             <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">
               Five roles. One system.
             </h2>
-            <p className="mt-3 max-w-2xl text-[var(--ink-muted)]">
+            <p className="mt-3 max-w-2xl text-muted">
               No shared inbox chaos — each person opens Elevate and sees their
               part of the hire.
             </p>
             <ul className="mt-14 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
               {roles.map((r) => (
-                <li key={r.name} className="border-t border-[var(--line)] pt-5">
+                <li key={r.name} className="border-t border-line pt-5">
                   <h3 className="font-display text-lg font-semibold">
                     {r.name}
                   </h3>
-                  <p className="mt-2 text-sm leading-relaxed text-[var(--ink-muted)]">
+                  <p className="mt-2 text-sm leading-relaxed text-muted">
                     {r.body}
                   </p>
                 </li>
@@ -482,15 +492,15 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="faq" className="border-t border-[var(--line)] py-20 sm:py-28">
+        <section id="faq" className="border-t border-line py-20 sm:py-28">
           <div className="mx-auto max-w-3xl px-5 sm:px-8">
             <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">
               FAQ
             </h2>
-            <p className="mt-3 text-[var(--ink-muted)]">
+            <p className="mt-3 text-muted">
               Straight answers on roles, matching, pipeline, and access.
             </p>
-            <div className="mt-10 divide-y divide-[var(--line)] border-y border-[var(--line)]">
+            <div className="mt-10 divide-y divide-line border-y border-line">
               {faqs.map((item, i) => {
                 const open = openFaq === i;
                 return (
@@ -502,12 +512,12 @@ export default function Home() {
                       onClick={() => setOpenFaq(open ? null : i)}
                     >
                       {item.q}
-                      <span className="text-[var(--brand)]" aria-hidden>
+                      <span className="text-brand" aria-hidden>
                         {open ? "−" : "+"}
                       </span>
                     </button>
                     {open && (
-                      <p className="pb-4 text-sm leading-relaxed text-[var(--ink-muted)]">
+                      <p className="pb-4 text-sm leading-relaxed text-muted">
                         {item.a}
                       </p>
                     )}
@@ -519,11 +529,11 @@ export default function Home() {
         </section>
       </main>
 
-      <footer className="border-t border-[var(--line)] py-12">
+      <footer className="border-t border-line py-12">
         <div className="mx-auto flex max-w-6xl flex-col gap-8 px-5 sm:flex-row sm:items-start sm:justify-between sm:px-8">
           <div>
             <Logo className="h-8" />
-            <p className="mt-3 max-w-xs text-sm text-[var(--ink-muted)]">
+            <p className="mt-3 max-w-xs text-sm text-muted">
               Dual-sided ATS: companies run the hire, candidates apply and
               track — with AI scoring in between.
             </p>
@@ -533,25 +543,25 @@ export default function Home() {
               <span className="font-semibold">Product</span>
               <a
                 href="#workflow"
-                className="text-[var(--ink-muted)] hover:text-[var(--ink)]"
+                className="text-muted hover:text-ink"
               >
                 Workflow
               </a>
               <a
                 href="#features"
-                className="text-[var(--ink-muted)] hover:text-[var(--ink)]"
+                className="text-muted hover:text-ink"
               >
                 Features
               </a>
               <a
                 href="#roles"
-                className="text-[var(--ink-muted)] hover:text-[var(--ink)]"
+                className="text-muted hover:text-ink"
               >
                 Roles
               </a>
               <a
                 href="#faq"
-                className="text-[var(--ink-muted)] hover:text-[var(--ink)]"
+                className="text-muted hover:text-ink"
               >
                 FAQ
               </a>
@@ -559,21 +569,21 @@ export default function Home() {
             <div className="flex flex-col gap-2">
               <span className="font-semibold">Account</span>
               <Link
-                href="/login"
-                className="text-[var(--ink-muted)] hover:text-[var(--ink)]"
+                href="/auth?tab=login"
+                className="text-muted hover:text-ink"
               >
                 Log in
               </Link>
               <Link
-                href="/signup"
-                className="text-[var(--ink-muted)] hover:text-[var(--ink)]"
+                href="/auth?tab=signup"
+                className="text-muted hover:text-ink"
               >
                 Sign up
               </Link>
             </div>
           </div>
         </div>
-        <p className="mx-auto mt-10 max-w-6xl px-5 text-xs text-[var(--ink-muted)] sm:px-8">
+        <p className="mx-auto mt-10 max-w-6xl px-5 text-xs text-muted sm:px-8">
           © {new Date().getFullYear()} Elevate · DevFusion — AI-Powered
           Recruitment & ATS
         </p>
