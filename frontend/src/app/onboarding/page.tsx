@@ -9,6 +9,7 @@ import {
   btnPrimary,
   inputClass,
 } from "@/components/Auth";
+import { getUser, homeFor, setUser } from "@/lib/demo";
 
 type Role = "candidate" | "company";
 
@@ -33,8 +34,23 @@ function Onboarding() {
   const [size, setSize] = useState("");
   const [companyAbout, setCompanyAbout] = useState("");
 
-  function done() {
-    router.push("/");
+  function finish(
+    next: Role,
+    data: {
+      name: string;
+      headline?: string;
+      location?: string;
+      companyName?: string;
+      jobTitle?: string;
+    },
+  ) {
+    const prev = getUser();
+    setUser({
+      email: prev?.email || "demo@elevate.app",
+      role: next,
+      ...data,
+    });
+    router.push(homeFor(next));
   }
 
   async function saveCandidate(e: FormEvent) {
@@ -46,7 +62,11 @@ function Onboarding() {
     setBusy(true);
     await delay(300);
     setBusy(false);
-    done();
+    finish("candidate", {
+      name: fullName.trim(),
+      headline: headline.trim(),
+      location: location.trim() || "Mumbai",
+    });
   }
 
   async function saveCompany(e: FormEvent) {
@@ -58,7 +78,27 @@ function Onboarding() {
     setBusy(true);
     await delay(300);
     setBusy(false);
-    done();
+    finish("company", {
+      name: contactName.trim(),
+      jobTitle: jobTitle.trim(),
+      companyName: companyName.trim(),
+    });
+  }
+
+  function skip() {
+    if (role === "company") {
+      finish("company", {
+        name: "Alex Rivera",
+        companyName: "Elevate Labs",
+        jobTitle: "Recruiter",
+      });
+      return;
+    }
+    finish("candidate", {
+      name: "Nikhil Vishwakarma",
+      headline: "Full Stack Engineer",
+      location: "Mumbai",
+    });
   }
 
   if (!role) {
@@ -184,7 +224,7 @@ function Onboarding() {
           </div>
           <button
             type="button"
-            onClick={done}
+            onClick={skip}
             className={`w-full ${btnGhost} text-muted`}
           >
             Skip for now
@@ -288,7 +328,7 @@ function Onboarding() {
         </div>
         <button
           type="button"
-          onClick={done}
+          onClick={skip}
           className={`w-full ${btnGhost} text-muted`}
         >
           Skip for now

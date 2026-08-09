@@ -310,6 +310,12 @@ export default function Home() {
               >
                 Start hiring →
               </Link>
+              <Link
+                href="/recruiter"
+                className="mt-3 text-sm font-medium text-muted hover:text-ink"
+              >
+                Open recruiter demo
+              </Link>
             </div>
 
             <div className="flex flex-col border border-line bg-soft px-6 py-8 sm:px-8 sm:py-10">
@@ -349,6 +355,12 @@ export default function Home() {
                 className="mt-5 inline-flex w-fit rounded-md bg-brand px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-deep"
               >
                 Browse jobs →
+              </Link>
+              <Link
+                href="/candidate"
+                className="mt-3 text-sm font-medium text-muted hover:text-ink"
+              >
+                Open candidate demo
               </Link>
             </div>
           </div>

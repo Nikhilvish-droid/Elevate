@@ -10,6 +10,7 @@ import {
   OrDivider,
   btnPrimary,
 } from "@/components/Auth";
+import { getUser, homeFor, setUser } from "@/lib/demo";
 
 function AuthForm() {
   const router = useRouter();
@@ -33,13 +34,40 @@ function AuthForm() {
     );
   }
 
+  function finishLogin(addr: string) {
+    const existing = getUser();
+    if (existing) {
+      setUser({ ...existing, email: addr });
+      router.push(homeFor(existing.role));
+      return;
+    }
+    const role = hint === "company" ? "company" : "candidate";
+    setUser({
+      email: addr,
+      role,
+      name: role === "candidate" ? "Nikhil Vishwakarma" : "Alex Rivera",
+      location: role === "candidate" ? "Mumbai" : undefined,
+      headline: role === "candidate" ? "Full Stack Engineer" : undefined,
+      companyName: role === "company" ? "Elevate Labs" : undefined,
+      jobTitle: role === "company" ? "Recruiter" : undefined,
+    });
+    router.push(homeFor(role));
+  }
+
   async function onGoogle() {
     setError("");
     setBusy(true);
     await delay(300);
     setBusy(false);
-    if (isLogin) router.push("/");
-    else goOnboarding();
+    if (isLogin) finishLogin(email.trim() || "google@elevate.app");
+    else {
+      setUser({
+        email: email.trim() || "google@elevate.app",
+        role: "candidate",
+        name: "",
+      });
+      goOnboarding();
+    }
   }
 
   async function onSubmit(e: FormEvent) {
@@ -66,8 +94,11 @@ function AuthForm() {
     await delay(300);
     setBusy(false);
 
-    if (isLogin) router.push("/");
-    else goOnboarding();
+    if (isLogin) finishLogin(email.trim());
+    else {
+      setUser({ email: email.trim(), role: "candidate", name: "" });
+      goOnboarding();
+    }
   }
 
   return (
