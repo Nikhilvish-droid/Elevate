@@ -1,4 +1,5 @@
 export type Role = "candidate" | "company";
+export type TeamRole = "recruiter" | "manager" | "interviewer";
 
 export type DemoUser = {
   email: string;
@@ -8,6 +9,7 @@ export type DemoUser = {
   location?: string;
   companyName?: string;
   jobTitle?: string;
+  teamRole?: TeamRole;
 };
 
 const KEY = "elevate-demo-user";
@@ -30,6 +32,18 @@ export function clearUser() {
   localStorage.removeItem(KEY);
 }
 
-export function homeFor(role: Role) {
-  return role === "company" ? "/recruiter" : "/candidate";
+export function homeFor(user: Pick<DemoUser, "role" | "teamRole"> | Role) {
+  if (typeof user === "string") {
+    return user === "company" ? "/recruiter" : "/candidate";
+  }
+  if (user.role === "candidate") return "/candidate";
+  if (user.teamRole === "manager") return "/manager";
+  if (user.teamRole === "interviewer") return "/interviewer";
+  return "/recruiter";
+}
+
+export function teamLabel(team?: TeamRole) {
+  if (team === "manager") return "Hiring manager";
+  if (team === "interviewer") return "Interviewer";
+  return "Recruiter";
 }

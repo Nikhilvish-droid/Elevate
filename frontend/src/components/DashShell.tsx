@@ -3,7 +3,14 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ReactNode, useEffect, useState } from "react";
-import { clearUser, DemoUser, getUser, homeFor } from "@/lib/demo";
+import {
+  clearUser,
+  DemoUser,
+  getUser,
+  homeFor,
+  TeamRole,
+  teamLabel,
+} from "@/lib/demo";
 
 type NavItem = {
   href: string;
@@ -13,12 +20,20 @@ type NavItem = {
   active?: boolean;
 };
 
+const teamHomes: { role: TeamRole; href: string; label: string }[] = [
+  { role: "recruiter", href: "/recruiter", label: "Recruiter" },
+  { role: "manager", href: "/manager", label: "Hiring manager" },
+  { role: "interviewer", href: "/interviewer", label: "Interviewer" },
+];
+
 export function DashShell({
   role,
+  teamRole,
   nav,
   children,
 }: {
   role: "candidate" | "company";
+  teamRole?: TeamRole;
   nav: NavItem[];
   children: ReactNode;
 }) {
@@ -28,21 +43,35 @@ export function DashShell({
 
   useEffect(() => {
     const u = getUser();
-    if (!u || u.role !== role) {
-      setLocal({
-        email: "demo@elevate.app",
-        role,
-        name: role === "candidate" ? "Nikhil Vishwakarma" : "Alex Rivera",
-        location: role === "candidate" ? "Mumbai" : undefined,
-        headline:
-          role === "candidate" ? "Full Stack Engineer" : "Talent Lead",
-        companyName: role === "company" ? "Elevate Labs" : undefined,
-        jobTitle: role === "company" ? "Recruiter" : undefined,
-      });
+    if (role === "candidate") {
+      setLocal(
+        u?.role === "candidate"
+          ? u
+          : {
+              email: "demo@elevate.app",
+              role: "candidate",
+              name: "Nikhil Vishwakarma",
+              headline: "Full Stack Engineer",
+              location: "Mumbai",
+            },
+      );
       return;
     }
-    setLocal(u);
-  }, [role]);
+
+    const team = teamRole ?? "recruiter";
+    setLocal(
+      u?.role === "company"
+        ? { ...u, teamRole: team }
+        : {
+            email: "hiring@elevate.app",
+            role: "company",
+            name: "Alex Rivera",
+            companyName: "Elevate Labs",
+            jobTitle: teamLabel(team),
+            teamRole: team,
+          },
+    );
+  }, [role, teamRole]);
 
   function logout() {
     clearUser();
@@ -62,6 +91,9 @@ export function DashShell({
     (role === "company" ? user.companyName : null) ||
     user.email;
 
+  const badge =
+    role === "candidate" ? "Candidate" : teamLabel(teamRole ?? user.teamRole);
+
   const navClass = (active?: boolean) =>
     `flex flex-col items-center gap-1 rounded-md px-2 py-2.5 text-[10px] font-medium hover:bg-soft hover:text-ink ${
       active ? "bg-soft text-ink" : "text-muted"
@@ -71,13 +103,13 @@ export function DashShell({
     <div className="flex min-h-screen bg-surface">
       <aside className="sticky top-0 flex h-screen w-[4.5rem] shrink-0 flex-col items-center border-r border-line bg-elevated py-4 sm:w-20">
         <Link
-          href={homeFor(role)}
+          href={homeFor(user)}
           className="mb-6 flex h-9 w-9 items-center justify-center rounded-md bg-brand text-sm font-bold text-white"
           aria-label="Home"
         >
           E
         </Link>
-        <nav className="flex flex-1 flex-col gap-1">
+        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto">
           {nav.map((item) =>
             item.onClick ? (
               <button
@@ -105,16 +137,14 @@ export function DashShell({
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 items-center justify-between border-b border-line bg-elevated px-4 sm:px-6">
-          <p className="text-sm text-muted">
-            {role === "candidate" ? "Candidate" : "Recruiter"} · demo
-          </p>
+          <p className="text-sm text-muted">{badge} · demo</p>
           <div className="relative flex items-center gap-3">
             <button
               type="button"
               className="hidden rounded-md border border-line px-3 py-1.5 text-xs font-semibold sm:inline-flex"
             >
               <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              {role === "candidate" ? "Ready to interview" : "Hiring"}
+              {role === "candidate" ? "Ready to interview" : "Active"}
             </button>
             <button
               type="button"
@@ -131,13 +161,44 @@ export function DashShell({
                   <p className="text-sm font-semibold">{display}</p>
                   <p className="text-xs text-muted">{user.email}</p>
                 </div>
-                <Link
-                  href={role === "candidate" ? "/recruiter" : "/candidate"}
-                  className="block px-3 py-2 text-sm hover:bg-soft"
-                  onClick={() => setMenu(false)}
-                >
-                  Switch to {role === "candidate" ? "recruiter" : "candidate"}
-                </Link>
+                {role === "candidate" ? (
+                  <Link
+                    href="/recruiter"
+                    className="block px-3 py-2 text-sm hover:bg-soft"
+                    onClick={() => setMenu(false)}
+                  >
+                    Switch to recruiter
+                  </Link>
+                ) : (
+                  <>
+                    {teamHomes.map((t) => (
+                      <Link
+                        key={t.role}
+                        href={t.href}
+                        className="block px-3 py-2 text-sm hover:bg-soft"
+                        onClick={() => {
+                          setUser({
+                            ...user,
+                            role: "company",
+                            teamRole: t.role,
+                            jobTitle: t.label,
+                          });
+                          setMenu(false);
+                        }}
+                      >
+                        {t.label}
+                        {teamRole === t.role ? " ✓" : ""}
+                      </Link>
+                    ))}
+                    <Link
+                      href="/candidate"
+                      className="block border-t border-line px-3 py-2 text-sm hover:bg-soft"
+                      onClick={() => setMenu(false)}
+                    >
+                      Candidate view
+                    </Link>
+                  </>
+                )}
                 <button
                   type="button"
                   onClick={logout}
@@ -220,6 +281,23 @@ export function IconOffer() {
     <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6">
       <path d="M4 5h12v12H4z" />
       <path d="M7 9h6M7 12h4" />
+    </svg>
+  );
+}
+
+export function IconChart() {
+  return (
+    <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M4 16V9M10 16V5M16 16v-4" />
+    </svg>
+  );
+}
+
+export function IconCheck() {
+  return (
+    <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <circle cx="10" cy="10" r="7" />
+      <path d="M7 10.5l2 2 4-4" />
     </svg>
   );
 }

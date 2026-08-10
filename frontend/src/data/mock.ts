@@ -59,6 +59,16 @@ export const applicants = [
     stage: "Shortlisted",
     applied: "4 days ago",
   },
+  {
+    id: "a4",
+    name: "Dev Patel",
+    role: "Full Stack",
+    job: "Full Stack Developer",
+    location: "Remote",
+    match: 91,
+    stage: "Shortlisted",
+    applied: "5 days ago",
+  },
 ];
 
 export const postedJobs = [
@@ -83,4 +93,40 @@ export const postedJobs = [
     status: "Paused",
     posted: "Feb 12",
   },
+];
+
+export const interviews = [
+  {
+    id: "i1",
+    candidate: "Sara Khan",
+    job: "Backend Engineer",
+    when: "Tomorrow · 11:00 AM",
+    round: "Technical",
+    status: "Upcoming",
+  },
+  {
+    id: "i2",
+    candidate: "Dev Patel",
+    job: "Full Stack Developer",
+    when: "Thu · 3:30 PM",
+    round: "System design",
+    status: "Upcoming",
+  },
+  {
+    id: "i3",
+    candidate: "Arjun Mehta",
+    job: "Full Stack Developer",
+    when: "Mon · Done",
+    round: "Screening",
+    status: "Needs feedback",
+  },
+];
+
+export const analytics = [
+  { label: "Open roles", value: "3" },
+  { label: "Applications", value: "43" },
+  { label: "Shortlisted", value: "8" },
+  { label: "Interviews this week", value: "5" },
+  { label: "Avg. match score", value: "86%" },
+  { label: "Offers out", value: "2" },
 ];

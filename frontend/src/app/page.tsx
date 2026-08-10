@@ -316,6 +316,14 @@ export default function Home() {
               >
                 Open recruiter demo
               </Link>
+              <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted">
+                <Link href="/manager" className="hover:text-ink">
+                  Manager
+                </Link>
+                <Link href="/interviewer" className="hover:text-ink">
+                  Interviewer
+                </Link>
+              </p>
             </div>
 
             <div className="flex flex-col border border-line bg-soft px-6 py-8 sm:px-8 sm:py-10">

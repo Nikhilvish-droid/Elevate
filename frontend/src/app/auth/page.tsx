@@ -38,20 +38,31 @@ function AuthForm() {
     const existing = getUser();
     if (existing) {
       setUser({ ...existing, email: addr });
-      router.push(homeFor(existing.role));
+      router.push(homeFor(existing));
       return;
     }
-    const role = hint === "company" ? "company" : "candidate";
-    setUser({
+    if (hint === "company") {
+      const user = {
+        email: addr,
+        role: "company" as const,
+        name: "Alex Rivera",
+        companyName: "Elevate Labs",
+        jobTitle: "Recruiter",
+        teamRole: "recruiter" as const,
+      };
+      setUser(user);
+      router.push(homeFor(user));
+      return;
+    }
+    const user = {
       email: addr,
-      role,
-      name: role === "candidate" ? "Nikhil Vishwakarma" : "Alex Rivera",
-      location: role === "candidate" ? "Mumbai" : undefined,
-      headline: role === "candidate" ? "Full Stack Engineer" : undefined,
-      companyName: role === "company" ? "Elevate Labs" : undefined,
-      jobTitle: role === "company" ? "Recruiter" : undefined,
-    });
-    router.push(homeFor(role));
+      role: "candidate" as const,
+      name: "Nikhil Vishwakarma",
+      location: "Mumbai",
+      headline: "Full Stack Engineer",
+    };
+    setUser(user);
+    router.push(homeFor(user));
   }
 
   async function onGoogle() {

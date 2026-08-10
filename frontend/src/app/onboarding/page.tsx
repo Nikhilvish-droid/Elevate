@@ -9,7 +9,7 @@ import {
   btnPrimary,
   inputClass,
 } from "@/components/Auth";
-import { getUser, homeFor, setUser } from "@/lib/demo";
+import { getUser, homeFor, setUser, TeamRole, teamLabel } from "@/lib/demo";
 
 type Role = "candidate" | "company";
 
@@ -17,6 +17,7 @@ function Onboarding() {
   const router = useRouter();
   const hint = useSearchParams().get("hint");
   const [role, setRole] = useState<Role | null>(null);
+  const [teamRole, setTeamRole] = useState<TeamRole | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -27,30 +28,41 @@ function Onboarding() {
   const [about, setAbout] = useState("");
 
   const [contactName, setContactName] = useState("");
-  const [jobTitle, setJobTitle] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [website, setWebsite] = useState("");
   const [industry, setIndustry] = useState("");
   const [size, setSize] = useState("");
   const [companyAbout, setCompanyAbout] = useState("");
 
-  function finish(
-    next: Role,
-    data: {
-      name: string;
-      headline?: string;
-      location?: string;
-      companyName?: string;
-      jobTitle?: string;
-    },
+  function finishCandidate(data: {
+    name: string;
+    headline?: string;
+    location?: string;
+  }) {
+    const prev = getUser();
+    const user = {
+      email: prev?.email || "demo@elevate.app",
+      role: "candidate" as const,
+      ...data,
+    };
+    setUser(user);
+    router.push(homeFor(user));
+  }
+
+  function finishCompany(
+    team: TeamRole,
+    data: { name: string; companyName: string },
   ) {
     const prev = getUser();
-    setUser({
-      email: prev?.email || "demo@elevate.app",
-      role: next,
+    const user = {
+      email: prev?.email || "hiring@elevate.app",
+      role: "company" as const,
+      teamRole: team,
+      jobTitle: teamLabel(team),
       ...data,
-    });
-    router.push(homeFor(next));
+    };
+    setUser(user);
+    router.push(homeFor(user));
   }
 
   async function saveCandidate(e: FormEvent) {
@@ -62,7 +74,7 @@ function Onboarding() {
     setBusy(true);
     await delay(300);
     setBusy(false);
-    finish("candidate", {
+    finishCandidate({
       name: fullName.trim(),
       headline: headline.trim(),
       location: location.trim() || "Mumbai",
@@ -71,30 +83,34 @@ function Onboarding() {
 
   async function saveCompany(e: FormEvent) {
     e.preventDefault();
-    if (!contactName.trim() || !jobTitle.trim() || !companyName.trim()) {
-      setError("Add your name, role, and company — or skip for now.");
+    if (!teamRole) return;
+    if (!contactName.trim() || !companyName.trim()) {
+      setError("Add your name and company — or skip for now.");
       return;
     }
     setBusy(true);
     await delay(300);
     setBusy(false);
-    finish("company", {
+    finishCompany(teamRole, {
       name: contactName.trim(),
-      jobTitle: jobTitle.trim(),
       companyName: companyName.trim(),
     });
   }
 
   function skip() {
-    if (role === "company") {
-      finish("company", {
-        name: "Alex Rivera",
+    if (role === "company" && teamRole) {
+      finishCompany(teamRole, {
+        name:
+          teamRole === "manager"
+            ? "Jordan Lee"
+            : teamRole === "interviewer"
+              ? "Sam Ortiz"
+              : "Alex Rivera",
         companyName: "Elevate Labs",
-        jobTitle: "Recruiter",
       });
       return;
     }
-    finish("candidate", {
+    finishCandidate({
       name: "Nikhil Vishwakarma",
       headline: "Full Stack Engineer",
       location: "Mumbai",
@@ -135,8 +151,56 @@ function Onboarding() {
           >
             <p className="font-display text-lg font-semibold">I&apos;m hiring</p>
             <p className="mt-1 text-sm text-muted">
-              Set up your company and start recruiting.
+              Join as recruiter, hiring manager, or interviewer.
             </p>
+          </button>
+        </div>
+      </AuthLayout>
+    );
+  }
+
+  if (role === "company" && !teamRole) {
+    return (
+      <AuthLayout
+        title="Your team role"
+        subtitle="Each role has limited features — pick the one that fits you."
+      >
+        <div className="space-y-3">
+          {(
+            [
+              {
+                id: "recruiter" as TeamRole,
+                title: "Recruiter",
+                body: "Post jobs, view apps, shortlist, schedule, email, offers.",
+              },
+              {
+                id: "manager" as TeamRole,
+                title: "Hiring manager",
+                body: "Review shortlist, approve hires, feedback, analytics.",
+              },
+              {
+                id: "interviewer" as TeamRole,
+                title: "Interviewer",
+                body: "Join assigned rounds and leave structured feedback.",
+              },
+            ] as const
+          ).map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => setTeamRole(opt.id)}
+              className="w-full border border-line bg-elevated px-5 py-5 text-left transition hover:border-brand"
+            >
+              <p className="font-display text-lg font-semibold">{opt.title}</p>
+              <p className="mt-1 text-sm text-muted">{opt.body}</p>
+            </button>
+          ))}
+          <button
+            type="button"
+            className={btnGhost}
+            onClick={() => setRole(null)}
+          >
+            Back
           </button>
         </div>
       </AuthLayout>
@@ -236,7 +300,7 @@ function Onboarding() {
 
   return (
     <AuthLayout
-      eyebrow="Company"
+      eyebrow={teamLabel(teamRole ?? undefined)}
       title="Company details"
       subtitle="Fill this out now, or skip and finish later."
     >
@@ -246,13 +310,6 @@ function Onboarding() {
           name="contactName"
           value={contactName}
           onChange={(e) => setContactName(e.target.value)}
-        />
-        <Field
-          label="Your role"
-          name="jobTitle"
-          value={jobTitle}
-          onChange={(e) => setJobTitle(e.target.value)}
-          placeholder="e.g. Recruiter"
         />
         <Field
           label="Company name"
@@ -313,7 +370,7 @@ function Onboarding() {
             className={btnGhost}
             onClick={() => {
               setError("");
-              setRole(null);
+              setTeamRole(null);
             }}
           >
             Back
