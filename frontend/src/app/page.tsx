@@ -311,17 +311,14 @@ export default function Home() {
                 Start hiring →
               </Link>
               <Link
-                href="/recruiter"
+                href="/auth?tab=login"
                 className="mt-3 text-sm font-medium text-muted hover:text-ink"
               >
-                Open recruiter demo
+                Already hiring? Log in
               </Link>
               <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted">
-                <Link href="/manager" className="hover:text-ink">
-                  Manager
-                </Link>
-                <Link href="/interviewer" className="hover:text-ink">
-                  Interviewer
+                <Link href="/auth?tab=signup&hint=company" className="hover:text-ink">
+                  Create company account
                 </Link>
               </p>
             </div>
@@ -365,10 +362,10 @@ export default function Home() {
                 Browse jobs →
               </Link>
               <Link
-                href="/candidate"
+                href="/auth?tab=login"
                 className="mt-3 text-sm font-medium text-muted hover:text-ink"
               >
-                Open candidate demo
+                Already have an account? Log in
               </Link>
             </div>
           </div>

@@ -12,7 +12,7 @@ import {
   IconStar,
 } from "@/components/DashShell";
 import { applicants, postedJobs } from "@/data/mock";
-import { DemoUser, getUser, setUser } from "@/lib/demo";
+import { Profile, getProfile } from "@/lib/profile";
 
 type View =
   | "home"
@@ -24,30 +24,17 @@ type View =
   | "offers";
 
 export default function RecruiterPage() {
-  const [user, setLocal] = useState<DemoUser | null>(null);
+  const [user, setLocal] = useState<Profile | null>(null);
   const [view, setView] = useState<View>("home");
   const [shortlisted, setShortlisted] = useState<string[]>(["a3", "a4"]);
 
   useEffect(() => {
-    const u = getUser();
-    const next: DemoUser =
-      u?.role === "company"
-        ? { ...u, teamRole: "recruiter" }
-        : {
-            email: "hiring@elevate.app",
-            role: "company",
-            name: "Alex Rivera",
-            companyName: "Elevate Labs",
-            jobTitle: "Recruiter",
-            teamRole: "recruiter",
-          };
-    setUser(next);
-    setLocal(next);
+    getProfile().then(setLocal);
   }, []);
 
-  const company = user?.companyName ?? "Elevate Labs";
-  const name = user?.name ?? "Recruiter";
-  const title = user?.jobTitle ?? "Recruiter";
+  const company = user?.company_name ?? "Your company";
+  const name = user?.full_name ?? "Recruiter";
+  const title = user?.job_title ?? "Recruiter";
 
   const nav = [
     { label: "Home", icon: <IconHome />, id: "home" as View },
@@ -175,7 +162,7 @@ export default function RecruiterPage() {
         ) : null}
 
         {view === "email" ? (
-          <Panel title="Send email" sub="Message an applicant (demo).">
+          <Panel title="Send email" sub="Message an applicant.">
             <SimpleForm
               fields={[
                 {

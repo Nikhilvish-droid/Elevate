@@ -10,80 +10,73 @@ import {
   OrDivider,
   btnPrimary,
 } from "@/components/Auth";
-import { getUser, homeFor, setUser } from "@/lib/demo";
+import { createClient } from "@/lib/supabase/client";
+import { getAccessToken } from "@/lib/auth/jwt";
+import { getProfile, homeFor } from "@/lib/profile";
 
 function AuthForm() {
   const router = useRouter();
   const params = useSearchParams();
   const mode = params.get("tab") === "login" ? "login" : "signup";
   const hint = params.get("hint");
+  const authError = params.get("error");
   const isLogin = mode === "login";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPass, setShowPass] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(
+    authError ? "Sign-in failed. Try again." : "",
+  );
   const [busy, setBusy] = useState(false);
+  const [info, setInfo] = useState("");
 
-  function goOnboarding() {
-    router.push(
-      hint === "company" || hint === "candidate"
-        ? `/onboarding?hint=${hint}`
-        : "/onboarding",
-    );
+  function onboardingPath() {
+    return hint === "company" || hint === "candidate"
+      ? `/onboarding?hint=${hint}`
+      : "/onboarding";
   }
 
-  function finishLogin(addr: string) {
-    const existing = getUser();
-    if (existing) {
-      setUser({ ...existing, email: addr });
-      router.push(homeFor(existing));
+  async function afterLogin() {
+    const token = await getAccessToken();
+    if (!token) {
+      setError("Login succeeded but no JWT was issued. Try again.");
       return;
     }
-    if (hint === "company") {
-      const user = {
-        email: addr,
-        role: "company" as const,
-        name: "Alex Rivera",
-        companyName: "Elevate Labs",
-        jobTitle: "Recruiter",
-        teamRole: "recruiter" as const,
-      };
-      setUser(user);
-      router.push(homeFor(user));
+
+    const profile = await getProfile();
+    if (profile?.onboarding_complete && profile.role) {
+      router.push(homeFor(profile));
+      router.refresh();
       return;
     }
-    const user = {
-      email: addr,
-      role: "candidate" as const,
-      name: "Nikhil Vishwakarma",
-      location: "Mumbai",
-      headline: "Full Stack Engineer",
-    };
-    setUser(user);
-    router.push(homeFor(user));
+    router.push(onboardingPath());
+    router.refresh();
   }
 
   async function onGoogle() {
     setError("");
+    setInfo("");
     setBusy(true);
-    await delay(300);
-    setBusy(false);
-    if (isLogin) finishLogin(email.trim() || "google@elevate.app");
-    else {
-      setUser({
-        email: email.trim() || "google@elevate.app",
-        role: "candidate",
-        name: "",
-      });
-      goOnboarding();
+    const supabase = createClient();
+    const origin = window.location.origin;
+    const { error: oauthError } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(onboardingPath())}`,
+      },
+    });
+    if (oauthError) {
+      setError(oauthError.message);
+      setBusy(false);
     }
   }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
+    setInfo("");
 
     if (!email.trim() || !password) {
       setError("Email and password are required.");
@@ -102,13 +95,47 @@ function AuthForm() {
     }
 
     setBusy(true);
-    await delay(300);
-    setBusy(false);
+    const supabase = createClient();
 
-    if (isLogin) finishLogin(email.trim());
-    else {
-      setUser({ email: email.trim(), role: "candidate", name: "" });
-      goOnboarding();
+    try {
+      if (isLogin) {
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+        if (signInError) {
+          setError(signInError.message);
+          return;
+        }
+        await afterLogin();
+        return;
+      }
+
+      const origin = window.location.origin;
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: {
+          emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent(onboardingPath())}`,
+        },
+      });
+
+      if (signUpError) {
+        setError(signUpError.message);
+        return;
+      }
+
+      // If email confirmation is on, session may be null
+      if (!data.session) {
+        setInfo(
+          "Check your email to confirm your account, then log in.",
+        );
+        return;
+      }
+
+      await afterLogin();
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -175,6 +202,11 @@ function AuthForm() {
             {error}
           </p>
         ) : null}
+        {info ? (
+          <p className="text-sm text-brand" role="status">
+            {info}
+          </p>
+        ) : null}
 
         <button type="submit" disabled={busy} className={`w-full ${btnPrimary}`}>
           {busy
@@ -188,10 +220,6 @@ function AuthForm() {
       </form>
     </AuthLayout>
   );
-}
-
-function delay(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
 }
 
 export default function AuthPage() {

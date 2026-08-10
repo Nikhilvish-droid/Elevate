@@ -4,13 +4,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ReactNode, useEffect, useState } from "react";
 import {
-  clearUser,
-  DemoUser,
-  getUser,
-  homeFor,
+  Profile,
   TeamRole,
+  getProfile,
+  getSessionUser,
+  homeFor,
+  signOut,
   teamLabel,
-} from "@/lib/demo";
+} from "@/lib/profile";
 
 type NavItem = {
   href: string;
@@ -38,44 +39,65 @@ export function DashShell({
   children: ReactNode;
 }) {
   const router = useRouter();
-  const [user, setLocal] = useState<DemoUser | null>(null);
+  const [user, setLocal] = useState<Profile | null>(null);
   const [menu, setMenu] = useState(false);
 
   useEffect(() => {
-    const u = getUser();
-    if (role === "candidate") {
+    let cancelled = false;
+    (async () => {
+      const sessionUser = await getSessionUser();
+      if (!sessionUser) {
+        router.replace("/auth?tab=login");
+        return;
+      }
+      const profile = await getProfile();
+      if (cancelled) return;
+
+      if (role === "candidate") {
+        setLocal(
+          profile ?? {
+            id: sessionUser.id,
+            email: sessionUser.email ?? null,
+            full_name: null,
+            role: "candidate",
+            team_role: null,
+            company_name: null,
+            job_title: null,
+            headline: null,
+            location: null,
+            onboarding_complete: false,
+          },
+        );
+        return;
+      }
+
+      const team = teamRole ?? profile?.team_role ?? "recruiter";
       setLocal(
-        u?.role === "candidate"
-          ? u
+        profile
+          ? { ...profile, team_role: team }
           : {
-              email: "demo@elevate.app",
-              role: "candidate",
-              name: "Nikhil Vishwakarma",
-              headline: "Full Stack Engineer",
-              location: "Mumbai",
+              id: sessionUser.id,
+              email: sessionUser.email ?? null,
+              full_name: null,
+              role: "company",
+              team_role: team,
+              company_name: null,
+              job_title: teamLabel(team),
+              headline: null,
+              location: null,
+              onboarding_complete: false,
             },
       );
-      return;
-    }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [role, teamRole, router]);
 
-    const team = teamRole ?? "recruiter";
-    setLocal(
-      u?.role === "company"
-        ? { ...u, teamRole: team }
-        : {
-            email: "hiring@elevate.app",
-            role: "company",
-            name: "Alex Rivera",
-            companyName: "Elevate Labs",
-            jobTitle: teamLabel(team),
-            teamRole: team,
-          },
-    );
-  }, [role, teamRole]);
-
-  function logout() {
-    clearUser();
+  async function logout() {
+    await signOut();
     router.push("/");
+    router.refresh();
   }
 
   if (!user) {
@@ -87,12 +109,15 @@ export function DashShell({
   }
 
   const display =
-    user.name ||
-    (role === "company" ? user.companyName : null) ||
-    user.email;
+    user.full_name ||
+    (role === "company" ? user.company_name : null) ||
+    user.email ||
+    "User";
 
   const badge =
-    role === "candidate" ? "Candidate" : teamLabel(teamRole ?? user.teamRole);
+    role === "candidate"
+      ? "Candidate"
+      : teamLabel(teamRole ?? user.team_role ?? undefined);
 
   const navClass = (active?: boolean) =>
     `flex flex-col items-center gap-1 rounded-md px-2 py-2.5 text-[10px] font-medium hover:bg-soft hover:text-ink ${
@@ -137,7 +162,7 @@ export function DashShell({
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 items-center justify-between border-b border-line bg-elevated px-4 sm:px-6">
-          <p className="text-sm text-muted">{badge} · demo</p>
+          <p className="text-sm text-muted">{badge}</p>
           <div className="relative flex items-center gap-3">
             <button
               type="button"
@@ -177,11 +202,11 @@ export function DashShell({
                         href={t.href}
                         className="block px-3 py-2 text-sm hover:bg-soft"
                         onClick={() => {
-                          setUser({
+                          setLocal({
                             ...user,
                             role: "company",
-                            teamRole: t.role,
-                            jobTitle: t.label,
+                            team_role: t.role,
+                            job_title: t.label,
                           });
                           setMenu(false);
                         }}

@@ -8,12 +8,12 @@ import {
   IconMsg,
 } from "@/components/DashShell";
 import { interviews } from "@/data/mock";
-import { DemoUser, getUser, setUser } from "@/lib/demo";
+import { Profile, getProfile } from "@/lib/profile";
 
 type View = "home" | "rounds" | "feedback";
 
 export default function InterviewerPage() {
-  const [user, setLocal] = useState<DemoUser | null>(null);
+  const [user, setLocal] = useState<Profile | null>(null);
   const [view, setView] = useState<View>("home");
   const [activeId, setActiveId] = useState(interviews[0]?.id ?? "");
   const [rating, setRating] = useState("4");
@@ -21,28 +21,11 @@ export default function InterviewerPage() {
   const [saved, setSaved] = useState("");
 
   useEffect(() => {
-    const u = getUser();
-    const next: DemoUser =
-      u?.role === "company"
-        ? {
-            ...u,
-            teamRole: "interviewer",
-            jobTitle: u.jobTitle || "Interviewer",
-          }
-        : {
-            email: "interview@elevate.app",
-            role: "company",
-            name: "Sam Ortiz",
-            companyName: "Elevate Labs",
-            jobTitle: "Interviewer",
-            teamRole: "interviewer",
-          };
-    setUser(next);
-    setLocal(next);
+    getProfile().then(setLocal);
   }, []);
 
-  const company = user?.companyName ?? "Elevate Labs";
-  const name = user?.name ?? "Interviewer";
+  const company = user?.company_name ?? "Your company";
+  const name = user?.full_name ?? "Interviewer";
   const active = interviews.find((i) => i.id === activeId) ?? interviews[0];
 
   const nav = [
@@ -52,7 +35,7 @@ export default function InterviewerPage() {
   ];
 
   function submitFeedback() {
-    setSaved(`Feedback saved for ${active?.candidate} (demo).`);
+    setSaved(`Feedback saved for ${active?.candidate}.`);
     setFeedback("");
   }
 

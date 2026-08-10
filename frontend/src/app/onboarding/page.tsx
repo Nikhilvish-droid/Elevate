@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, Suspense, useState } from "react";
+import { FormEvent, Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   AuthLayout,
@@ -9,17 +9,26 @@ import {
   btnPrimary,
   inputClass,
 } from "@/components/Auth";
-import { getUser, homeFor, setUser, TeamRole, teamLabel } from "@/lib/demo";
+import {
+  TeamRole,
+  getSessionUser,
+  homeFor,
+  teamLabel,
+  updateProfile,
+} from "@/lib/profile";
 
 type Role = "candidate" | "company";
 
 function Onboarding() {
   const router = useRouter();
   const hint = useSearchParams().get("hint");
-  const [role, setRole] = useState<Role | null>(null);
+  const [role, setRole] = useState<Role | null>(
+    hint === "company" || hint === "candidate" ? hint : null,
+  );
   const [teamRole, setTeamRole] = useState<TeamRole | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [ready, setReady] = useState(false);
 
   const [fullName, setFullName] = useState("");
   const [headline, setHeadline] = useState("");
@@ -34,35 +43,58 @@ function Onboarding() {
   const [size, setSize] = useState("");
   const [companyAbout, setCompanyAbout] = useState("");
 
-  function finishCandidate(data: {
-    name: string;
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const user = await getSessionUser();
+      if (!user) {
+        router.replace("/auth?tab=login");
+        return;
+      }
+      if (!cancelled) setReady(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
+
+  async function finishCandidate(data: {
+    full_name: string;
     headline?: string;
     location?: string;
+    skills?: string;
+    about?: string;
+    onboarding_complete: boolean;
   }) {
-    const prev = getUser();
-    const user = {
-      email: prev?.email || "demo@elevate.app",
-      role: "candidate" as const,
+    const profile = await updateProfile({
+      role: "candidate",
+      team_role: null,
       ...data,
-    };
-    setUser(user);
-    router.push(homeFor(user));
+    });
+    router.push(homeFor(profile));
+    router.refresh();
   }
 
-  function finishCompany(
+  async function finishCompany(
     team: TeamRole,
-    data: { name: string; companyName: string },
+    data: {
+      full_name: string;
+      company_name: string;
+      website?: string;
+      industry?: string;
+      company_size?: string;
+      about?: string;
+      onboarding_complete: boolean;
+    },
   ) {
-    const prev = getUser();
-    const user = {
-      email: prev?.email || "hiring@elevate.app",
-      role: "company" as const,
-      teamRole: team,
-      jobTitle: teamLabel(team),
+    const profile = await updateProfile({
+      role: "company",
+      team_role: team,
+      job_title: teamLabel(team),
       ...data,
-    };
-    setUser(user);
-    router.push(homeFor(user));
+    });
+    router.push(homeFor(profile));
+    router.refresh();
   }
 
   async function saveCandidate(e: FormEvent) {
@@ -72,13 +104,21 @@ function Onboarding() {
       return;
     }
     setBusy(true);
-    await delay(300);
-    setBusy(false);
-    finishCandidate({
-      name: fullName.trim(),
-      headline: headline.trim(),
-      location: location.trim() || "Mumbai",
-    });
+    setError("");
+    try {
+      await finishCandidate({
+        full_name: fullName.trim(),
+        headline: headline.trim(),
+        location: location.trim() || undefined,
+        skills: skills.trim() || undefined,
+        about: about.trim() || undefined,
+        onboarding_complete: true,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save profile.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function saveCompany(e: FormEvent) {
@@ -89,32 +129,60 @@ function Onboarding() {
       return;
     }
     setBusy(true);
-    await delay(300);
-    setBusy(false);
-    finishCompany(teamRole, {
-      name: contactName.trim(),
-      companyName: companyName.trim(),
-    });
+    setError("");
+    try {
+      await finishCompany(teamRole, {
+        full_name: contactName.trim(),
+        company_name: companyName.trim(),
+        website: website.trim() || undefined,
+        industry: industry.trim() || undefined,
+        company_size: size || undefined,
+        about: companyAbout.trim() || undefined,
+        onboarding_complete: true,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save profile.");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  function skip() {
-    if (role === "company" && teamRole) {
-      finishCompany(teamRole, {
-        name:
-          teamRole === "manager"
-            ? "Jordan Lee"
-            : teamRole === "interviewer"
-              ? "Sam Ortiz"
-              : "Alex Rivera",
-        companyName: "Elevate Labs",
+  async function skip() {
+    setBusy(true);
+    setError("");
+    try {
+      if (role === "company" && teamRole) {
+        await finishCompany(teamRole, {
+          full_name:
+            teamRole === "manager"
+              ? "Jordan Lee"
+              : teamRole === "interviewer"
+                ? "Sam Ortiz"
+                : "Alex Rivera",
+          company_name: "Elevate Labs",
+          onboarding_complete: true,
+        });
+        return;
+      }
+      await finishCandidate({
+        full_name: "New Candidate",
+        headline: "Open to work",
+        location: "Remote",
+        onboarding_complete: true,
       });
-      return;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save profile.");
+    } finally {
+      setBusy(false);
     }
-    finishCandidate({
-      name: "Nikhil Vishwakarma",
-      headline: "Full Stack Engineer",
-      location: "Mumbai",
-    });
+  }
+
+  if (!ready) {
+    return (
+      <AuthLayout title="Almost there">
+        <div className="h-32 animate-pulse rounded-md bg-soft" />
+      </AuthLayout>
+    );
   }
 
   if (!role) {
@@ -289,6 +357,7 @@ function Onboarding() {
           <button
             type="button"
             onClick={skip}
+            disabled={busy}
             className={`w-full ${btnGhost} text-muted`}
           >
             Skip for now
@@ -386,6 +455,7 @@ function Onboarding() {
         <button
           type="button"
           onClick={skip}
+          disabled={busy}
           className={`w-full ${btnGhost} text-muted`}
         >
           Skip for now
@@ -393,10 +463,6 @@ function Onboarding() {
       </form>
     </AuthLayout>
   );
-}
-
-function delay(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
 }
 
 export default function OnboardingPage() {

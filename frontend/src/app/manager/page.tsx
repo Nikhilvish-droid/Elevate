@@ -10,12 +10,12 @@ import {
   IconStar,
 } from "@/components/DashShell";
 import { analytics, applicants } from "@/data/mock";
-import { DemoUser, getUser, setUser } from "@/lib/demo";
+import { Profile, getProfile } from "@/lib/profile";
 
 type View = "home" | "shortlist" | "approve" | "feedback" | "analytics";
 
 export default function ManagerPage() {
-  const [user, setLocal] = useState<DemoUser | null>(null);
+  const [user, setLocal] = useState<Profile | null>(null);
   const [view, setView] = useState<View>("home");
   const [approved, setApproved] = useState<string[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -23,24 +23,11 @@ export default function ManagerPage() {
   const shortlist = applicants.filter((a) => a.stage === "Shortlisted");
 
   useEffect(() => {
-    const u = getUser();
-    const next: DemoUser =
-      u?.role === "company"
-        ? { ...u, teamRole: "manager", jobTitle: u.jobTitle || "Hiring Manager" }
-        : {
-            email: "manager@elevate.app",
-            role: "company",
-            name: "Jordan Lee",
-            companyName: "Elevate Labs",
-            jobTitle: "Hiring Manager",
-            teamRole: "manager",
-          };
-    setUser(next);
-    setLocal(next);
+    getProfile().then(setLocal);
   }, []);
 
-  const company = user?.companyName ?? "Elevate Labs";
-  const name = user?.name ?? "Hiring Manager";
+  const company = user?.company_name ?? "Your company";
+  const name = user?.full_name ?? "Hiring Manager";
 
   const nav = [
     { label: "Home", icon: <IconHome />, id: "home" as View },

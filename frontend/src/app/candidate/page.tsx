@@ -10,7 +10,7 @@ import {
   IconUser,
 } from "@/components/DashShell";
 import { jobs } from "@/data/mock";
-import { DemoUser, getUser } from "@/lib/demo";
+import { Profile, getProfile } from "@/lib/profile";
 
 const nav = [
   { href: "/candidate", label: "Home", icon: <IconHome /> },
@@ -21,25 +21,14 @@ const nav = [
 ];
 
 export default function CandidatePage() {
-  const [user, setUser] = useState<DemoUser | null>(null);
+  const [user, setUser] = useState<Profile | null>(null);
 
   useEffect(() => {
-    const u = getUser();
-    setUser(
-      u?.role === "candidate"
-        ? u
-        : {
-            email: "demo@elevate.app",
-            role: "candidate",
-            name: "Nikhil Vishwakarma",
-            headline: "Full Stack Engineer",
-            location: "Mumbai",
-          },
-    );
+    getProfile().then(setUser);
   }, []);
 
-  const name = user?.name ?? "Candidate";
-  const location = user?.location ?? "Mumbai";
+  const name = user?.full_name ?? "Candidate";
+  const location = user?.location ?? "—";
   const headline = user?.headline ?? "Looking for roles";
 
   return (
