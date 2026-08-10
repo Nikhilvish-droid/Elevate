@@ -1,10 +1,11 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Logo from "@/components/Logo";
+import { useTheme } from "@/lib/theme";
 
 const navLinks = [
   { href: "#workflow", label: "Workflow" },
@@ -98,27 +99,11 @@ const faqs = [
 
 export default function Home() {
   const router = useRouter();
-  const [dark, setDark] = useState(false);
+  const { dark, toggleTheme } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const [candidateQuery, setCandidateQuery] = useState("");
   const [jobQuery, setJobQuery] = useState("");
-
-  useEffect(() => {
-    const saved = localStorage.getItem("elevate-theme");
-    const preferDark =
-      saved === "dark" ||
-      (!saved && window.matchMedia("(prefers-color-scheme: dark)").matches);
-    setDark(preferDark);
-    document.documentElement.classList.toggle("dark", preferDark);
-  }, []);
-
-  function toggleTheme() {
-    const next = !dark;
-    setDark(next);
-    document.documentElement.classList.toggle("dark", next);
-    localStorage.setItem("elevate-theme", next ? "dark" : "light");
-  }
 
   function goHireSearch(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();

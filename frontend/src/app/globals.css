@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Class-based dark mode (html.dark) — works on every page */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --bg: #f4f7f6;
   --bg-elevated: #ffffff;

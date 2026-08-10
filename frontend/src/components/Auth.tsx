@@ -1,6 +1,14 @@
 import Link from "next/link";
-import type { InputHTMLAttributes, ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type InputHTMLAttributes,
+  type ReactNode,
+} from "react";
 import Logo from "@/components/Logo";
+import { ThemeToggle } from "@/lib/theme";
 
 export const inputClass =
   "mt-1.5 w-full rounded-md border border-line bg-elevated px-3 py-2.5 text-sm outline-none focus:border-brand";
@@ -29,9 +37,12 @@ export function AuthLayout({
           <Link href="/" aria-label="Elevate home">
             <Logo className="h-9" />
           </Link>
-          <Link href="/" className="text-sm text-muted hover:text-ink">
-            Home
-          </Link>
+          <div className="flex items-center gap-3">
+            <ThemeToggle />
+            <Link href="/" className="text-sm text-muted hover:text-ink">
+              Home
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -62,6 +73,229 @@ export function Field({
       {label}
       <input id={fieldId} className={inputClass} {...props} />
     </label>
+  );
+}
+
+function formatBytes(n: number) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Circular photo picker with live preview */
+export function PhotoUpload({
+  label = "Profile picture",
+  hint = "JPG or PNG · up to 2 MB",
+  file,
+  onChange,
+}: {
+  label?: string;
+  hint?: string;
+  file: File | null;
+  onChange: (file: File | null) => void;
+}) {
+  const inputId = useId();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!file) {
+      setPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  return (
+    <div>
+      <p className="text-sm font-medium">{label}</p>
+      <div className="mt-2 flex items-center gap-4">
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className="group relative flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full border border-line bg-soft transition hover:border-brand"
+          aria-label={file ? "Change photo" : "Add photo"}
+        >
+          {preview ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={preview} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <span className="text-brand">
+              <svg
+                width="28"
+                height="28"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+              >
+                <circle cx="12" cy="8" r="3.5" />
+                <path d="M5 19c1.5-3.5 12.5-3.5 14 0" />
+              </svg>
+            </span>
+          )}
+          <span className="absolute inset-0 flex items-end justify-center bg-gradient-to-t from-black/45 to-transparent pb-1.5 opacity-0 transition group-hover:opacity-100">
+            <span className="text-[10px] font-semibold text-white">Edit</span>
+          </span>
+        </button>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              className={`${btnGhost} px-3 py-2 text-xs`}
+            >
+              {file ? "Replace photo" : "Upload photo"}
+            </button>
+            {file ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onChange(null);
+                  if (inputRef.current) inputRef.current.value = "";
+                }}
+                className="rounded-md px-3 py-2 text-xs font-semibold text-muted hover:bg-soft hover:text-ink"
+              >
+                Remove
+              </button>
+            ) : null}
+          </div>
+          <p className="mt-1.5 truncate text-xs text-muted">
+            {file ? file.name : hint}
+          </p>
+        </div>
+      </div>
+
+      <input
+        ref={inputRef}
+        id={inputId}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        className="sr-only"
+        onChange={(e) => onChange(e.target.files?.[0] ?? null)}
+      />
+    </div>
+  );
+}
+
+/** Document drop-zone for resume PDF/DOCX */
+export function DocumentUpload({
+  label = "Resume",
+  hint = "PDF or DOCX · up to 10 MB",
+  accept = ".pdf,.doc,.docx,application/pdf",
+  file,
+  onChange,
+}: {
+  label?: string;
+  hint?: string;
+  accept?: string;
+  file: File | null;
+  onChange: (file: File | null) => void;
+}) {
+  const inputId = useId();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+
+  function takeFiles(list: FileList | null) {
+    onChange(list?.[0] ?? null);
+  }
+
+  return (
+    <div>
+      <p className="text-sm font-medium">{label}</p>
+
+      {file ? (
+        <div className="mt-2 flex items-center gap-3 border border-line bg-elevated px-3 py-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center bg-soft text-brand">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+            >
+              <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+              <path d="M14 3v5h5" />
+            </svg>
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium">{file.name}</p>
+            <p className="text-xs text-muted">{formatBytes(file.size)}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            className="text-xs font-semibold text-brand hover:underline"
+          >
+            Replace
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onChange(null);
+              if (inputRef.current) inputRef.current.value = "";
+            }}
+            className="text-xs font-semibold text-muted hover:text-ink"
+            aria-label="Remove file"
+          >
+            ✕
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          onDragEnter={(e) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragOver={(e) => e.preventDefault()}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            takeFiles(e.dataTransfer.files);
+          }}
+          className={`mt-2 flex w-full flex-col items-center justify-center gap-2 border border-dashed px-4 py-7 text-center transition ${
+            dragging
+              ? "border-brand bg-soft"
+              : "border-line bg-elevated hover:border-brand hover:bg-soft"
+          }`}
+        >
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-soft text-brand">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+            >
+              <path d="M12 16V7" />
+              <path d="M8.5 10.5 12 7l3.5 3.5" />
+              <path d="M5 16.5V18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-1.5" />
+            </svg>
+          </span>
+          <span className="text-sm font-semibold text-ink">
+            Drop resume here or browse
+          </span>
+          <span className="text-xs text-muted">{hint}</span>
+        </button>
+      )}
+
+      <input
+        ref={inputRef}
+        id={inputId}
+        type="file"
+        accept={accept}
+        className="sr-only"
+        onChange={(e) => takeFiles(e.target.files)}
+      />
+    </div>
   );
 }
 
@@ -121,8 +355,7 @@ export function AuthTabs({
   hint: string | null;
 }) {
   const q = hint ? `&hint=${encodeURIComponent(hint)}` : "";
-  const base =
-    "rounded px-3 py-2.5 text-center text-sm font-semibold";
+  const base = "rounded px-3 py-2.5 text-center text-sm font-semibold";
   const on = "bg-brand text-white";
   const off = "text-muted hover:bg-soft";
 

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Outfit, Source_Sans_3 } from "next/font/google";
+import { ThemeProvider, themeInitScript } from "@/lib/theme";
 import "./globals.css";
 
 const outfit = Outfit({
@@ -27,10 +28,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning data-scroll-behavior="smooth">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body
-        className={`${outfit.variable} ${sourceSans.variable} flex min-h-screen flex-col antialiased`}
+        className={`${outfit.variable} ${sourceSans.variable} flex min-h-screen flex-col bg-surface text-ink antialiased`}
       >
-        {children}
+        <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
   );

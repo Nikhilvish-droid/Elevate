@@ -12,6 +12,7 @@ import {
   signOut,
   teamLabel,
 } from "@/lib/profile";
+import { ThemeToggle } from "@/lib/theme";
 
 type NavItem = {
   href: string;
@@ -59,6 +60,8 @@ export function DashShell({
             id: sessionUser.id,
             email: sessionUser.email ?? null,
             full_name: null,
+            phone: null,
+            profile_image_url: null,
             role: "candidate",
             team_role: null,
             company_name: null,
@@ -79,6 +82,8 @@ export function DashShell({
               id: sessionUser.id,
               email: sessionUser.email ?? null,
               full_name: null,
+              phone: null,
+              profile_image_url: null,
               role: "company",
               team_role: team,
               company_name: null,
@@ -164,6 +169,7 @@ export function DashShell({
         <header className="flex h-14 items-center justify-between border-b border-line bg-elevated px-4 sm:px-6">
           <p className="text-sm text-muted">{badge}</p>
           <div className="relative flex items-center gap-3">
+            <ThemeToggle className="rounded-md border border-line px-2.5 py-1.5 text-xs font-semibold text-muted hover:bg-soft hover:text-ink" />
             <button
               type="button"
               className="hidden rounded-md border border-line px-3 py-1.5 text-xs font-semibold sm:inline-flex"

@@ -4,7 +4,9 @@ import { FormEvent, Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   AuthLayout,
+  DocumentUpload,
   Field,
+  PhotoUpload,
   btnGhost,
   btnPrimary,
   inputClass,
@@ -13,9 +15,11 @@ import {
   TeamRole,
   getSessionUser,
   homeFor,
+  saveCandidateOnboarding,
+  saveCompanyOnboarding,
   teamLabel,
-  updateProfile,
 } from "@/lib/profile";
+import { uploadAvatar, uploadResume } from "@/lib/storage";
 
 type Role = "candidate" | "company";
 
@@ -29,19 +33,33 @@ function Onboarding() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
+  const [email, setEmail] = useState("");
 
+  // Candidate
   const [fullName, setFullName] = useState("");
-  const [headline, setHeadline] = useState("");
-  const [skills, setSkills] = useState("");
+  const [phone, setPhone] = useState("");
   const [location, setLocation] = useState("");
-  const [about, setAbout] = useState("");
+  const [education, setEducation] = useState("");
+  const [experience, setExperience] = useState("");
+  const [skills, setSkills] = useState("");
+  const [certifications, setCertifications] = useState("");
+  const [portfolio, setPortfolio] = useState("");
+  const [github, setGithub] = useState("");
+  const [linkedin, setLinkedin] = useState("");
+  const [coverLetter, setCoverLetter] = useState("");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
 
+  // Company
   const [contactName, setContactName] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [website, setWebsite] = useState("");
   const [industry, setIndustry] = useState("");
   const [size, setSize] = useState("");
   const [companyAbout, setCompanyAbout] = useState("");
+  const [socialLinks, setSocialLinks] = useState("");
+  const [officeLocations, setOfficeLocations] = useState("");
+  const [logoFile, setLogoFile] = useState<File | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,69 +69,49 @@ function Onboarding() {
         router.replace("/auth?tab=login");
         return;
       }
-      if (!cancelled) setReady(true);
+      if (!cancelled) {
+        setEmail(user.email ?? "");
+        setReady(true);
+      }
     })();
     return () => {
       cancelled = true;
     };
   }, [router]);
 
-  async function finishCandidate(data: {
-    full_name: string;
-    headline?: string;
-    location?: string;
-    skills?: string;
-    about?: string;
-    onboarding_complete: boolean;
-  }) {
-    const profile = await updateProfile({
-      role: "candidate",
-      team_role: null,
-      ...data,
-    });
-    router.push(homeFor(profile));
-    router.refresh();
-  }
-
-  async function finishCompany(
-    team: TeamRole,
-    data: {
-      full_name: string;
-      company_name: string;
-      website?: string;
-      industry?: string;
-      company_size?: string;
-      about?: string;
-      onboarding_complete: boolean;
-    },
-  ) {
-    const profile = await updateProfile({
-      role: "company",
-      team_role: team,
-      job_title: teamLabel(team),
-      ...data,
-    });
-    router.push(homeFor(profile));
-    router.refresh();
-  }
-
   async function saveCandidate(e: FormEvent) {
     e.preventDefault();
-    if (!fullName.trim() || !headline.trim()) {
-      setError("Add your name and headline, or skip for now.");
+    if (!fullName.trim()) {
+      setError("Name is required, or skip for now.");
       return;
     }
     setBusy(true);
     setError("");
     try {
-      await finishCandidate({
+      const profile_image_url = avatarFile
+        ? await uploadAvatar(avatarFile)
+        : null;
+      const resume = resumeFile ? await uploadResume(resumeFile) : null;
+
+      const profile = await saveCandidateOnboarding({
         full_name: fullName.trim(),
-        headline: headline.trim(),
-        location: location.trim() || undefined,
-        skills: skills.trim() || undefined,
-        about: about.trim() || undefined,
-        onboarding_complete: true,
+        phone: phone.trim() || null,
+        location: location.trim() || null,
+        education: education.trim() || null,
+        experience: experience.trim() || null,
+        skills: skills.trim() || null,
+        certifications: certifications.trim() || null,
+        portfolio: portfolio.trim() || null,
+        github: github.trim() || null,
+        linkedin: linkedin.trim() || null,
+        cover_letter: coverLetter.trim() || null,
+        profile_image_url,
+        resume,
       });
+
+      if (!profile) throw new Error("Saved, but could not load profile.");
+      router.push(homeFor(profile));
+      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save profile.");
     } finally {
@@ -131,15 +129,24 @@ function Onboarding() {
     setBusy(true);
     setError("");
     try {
-      await finishCompany(teamRole, {
+      const logo_url = logoFile ? await uploadAvatar(logoFile) : null;
+
+      const profile = await saveCompanyOnboarding({
         full_name: contactName.trim(),
         company_name: companyName.trim(),
-        website: website.trim() || undefined,
-        industry: industry.trim() || undefined,
-        company_size: size || undefined,
-        about: companyAbout.trim() || undefined,
-        onboarding_complete: true,
+        team_role: teamRole,
+        website: website.trim() || null,
+        industry: industry.trim() || null,
+        company_size: size || null,
+        description: companyAbout.trim() || null,
+        linkedin_url: socialLinks.trim() || null,
+        logo_url,
+        office_locations: officeLocations.trim() || null,
       });
+
+      if (!profile) throw new Error("Saved, but could not load profile.");
+      router.push(homeFor(profile));
+      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save profile.");
     } finally {
@@ -152,24 +159,23 @@ function Onboarding() {
     setError("");
     try {
       if (role === "company" && teamRole) {
-        await finishCompany(teamRole, {
-          full_name:
-            teamRole === "manager"
-              ? "Jordan Lee"
-              : teamRole === "interviewer"
-                ? "Sam Ortiz"
-                : "Alex Rivera",
-          company_name: "Elevate Labs",
-          onboarding_complete: true,
+        const profile = await saveCompanyOnboarding({
+          full_name: contactName.trim() || "Team member",
+          company_name: companyName.trim() || "My company",
+          team_role: teamRole,
         });
+        if (!profile) throw new Error("Could not finish onboarding.");
+        router.push(homeFor(profile));
+        router.refresh();
         return;
       }
-      await finishCandidate({
-        full_name: "New Candidate",
-        headline: "Open to work",
-        location: "Remote",
-        onboarding_complete: true,
+
+      const profile = await saveCandidateOnboarding({
+        full_name: fullName.trim() || "New Candidate",
       });
+      if (!profile) throw new Error("Could not finish onboarding.");
+      router.push(homeFor(profile));
+      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save profile.");
     } finally {
@@ -283,19 +289,63 @@ function Onboarding() {
         subtitle="Fill this out now, or skip and finish later."
       >
         <form onSubmit={saveCandidate} className="space-y-4" noValidate>
+          <PhotoUpload
+            label="Profile picture"
+            file={avatarFile}
+            onChange={setAvatarFile}
+          />
+
           <Field
-            label="Full name"
+            label="Name"
             name="fullName"
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
+            required
           />
           <Field
-            label="Headline"
-            name="headline"
-            value={headline}
-            onChange={(e) => setHeadline(e.target.value)}
-            placeholder="e.g. Full Stack Engineer"
+            label="Email"
+            name="email"
+            type="email"
+            value={email}
+            readOnly
           />
+          <Field
+            label="Phone"
+            name="phone"
+            type="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="+91 …"
+          />
+          <Field
+            label="Location"
+            name="location"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            placeholder="City, Country"
+          />
+          <label className="block text-sm font-medium" htmlFor="education">
+            Education
+            <textarea
+              id="education"
+              rows={2}
+              value={education}
+              onChange={(e) => setEducation(e.target.value)}
+              className={inputClass}
+              placeholder="Degree, school, year"
+            />
+          </label>
+          <label className="block text-sm font-medium" htmlFor="experience">
+            Experience
+            <textarea
+              id="experience"
+              rows={3}
+              value={experience}
+              onChange={(e) => setExperience(e.target.value)}
+              className={inputClass}
+              placeholder="Roles, companies, years"
+            />
+          </label>
           <Field
             label="Skills"
             name="skills"
@@ -304,28 +354,48 @@ function Onboarding() {
             placeholder="React, Node, SQL"
           />
           <Field
-            label="Location"
-            name="location"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
+            label="Certifications"
+            name="certifications"
+            value={certifications}
+            onChange={(e) => setCertifications(e.target.value)}
           />
-          <label className="block text-sm font-medium" htmlFor="about">
-            About
+          <Field
+            label="Portfolio"
+            name="portfolio"
+            type="url"
+            value={portfolio}
+            onChange={(e) => setPortfolio(e.target.value)}
+            placeholder="https://"
+          />
+          <Field
+            label="GitHub"
+            name="github"
+            type="url"
+            value={github}
+            onChange={(e) => setGithub(e.target.value)}
+            placeholder="https://github.com/…"
+          />
+          <Field
+            label="LinkedIn"
+            name="linkedin"
+            type="url"
+            value={linkedin}
+            onChange={(e) => setLinkedin(e.target.value)}
+            placeholder="https://linkedin.com/in/…"
+          />
+          <DocumentUpload
+            label="Resume"
+            file={resumeFile}
+            onChange={setResumeFile}
+          />
+          <label className="block text-sm font-medium" htmlFor="coverLetter">
+            Cover letter
             <textarea
-              id="about"
-              rows={3}
-              value={about}
-              onChange={(e) => setAbout(e.target.value)}
+              id="coverLetter"
+              rows={4}
+              value={coverLetter}
+              onChange={(e) => setCoverLetter(e.target.value)}
               className={inputClass}
-            />
-          </label>
-          <label className="block text-sm font-medium" htmlFor="resume">
-            Resume
-            <input
-              id="resume"
-              type="file"
-              accept=".pdf,.doc,.docx"
-              className="mt-1.5 block w-full text-sm text-muted"
             />
           </label>
 
@@ -374,6 +444,12 @@ function Onboarding() {
       subtitle="Fill this out now, or skip and finish later."
     >
       <form onSubmit={saveCompany} className="space-y-4" noValidate>
+        <PhotoUpload
+          label="Company logo"
+          hint="JPG or PNG · up to 2 MB"
+          file={logoFile}
+          onChange={setLogoFile}
+        />
         <Field
           label="Your name"
           name="contactName"
@@ -417,7 +493,7 @@ function Onboarding() {
           </select>
         </label>
         <label className="block text-sm font-medium" htmlFor="companyAbout">
-          About
+          Description
           <textarea
             id="companyAbout"
             rows={3}
@@ -426,6 +502,20 @@ function Onboarding() {
             className={inputClass}
           />
         </label>
+        <Field
+          label="Social links"
+          name="socialLinks"
+          value={socialLinks}
+          onChange={(e) => setSocialLinks(e.target.value)}
+          placeholder="LinkedIn, Twitter, …"
+        />
+        <Field
+          label="Office locations"
+          name="officeLocations"
+          value={officeLocations}
+          onChange={(e) => setOfficeLocations(e.target.value)}
+          placeholder="Mumbai, Bangalore"
+        />
 
         {error ? (
           <p className="text-sm text-red-600" role="alert">
