@@ -1,0 +1,32 @@
+We are looking for a Backend Developer with 2–4 years of experience to join our engineering team.
+
+Responsibilities:
+
+Design, build, and maintain RESTful APIs using Node.js and Express
+Work with PostgreSQL and MongoDB for data modeling and query optimization
+Write clean, testable code and participate in code reviews
+Collaborate with frontend engineers to integrate APIs
+Debug and resolve production issues in a timely manner
+
+Required Skills:
+
+Strong proficiency in JavaScript/TypeScript and Node.js
+Experience with Express.js or similar frameworks
+Solid understanding of relational databases (PostgreSQL/MySQL)
+Familiarity with REST API design principles
+Experience with Git and collaborative development workflows
+Basic understanding of data structures and algorithms
+
+Nice to Have:
+
+Experience with Docker and containerization
+Familiarity with AWS or other cloud platforms
+Exposure to CI/CD pipelines
+Experience with Redis or other caching solutions
+Knowledge of microservices architecture
+
+Qualifications:
+
+Bachelor's degree in Computer Science or related field (or equivalent practical experience)
+2+ years of professional backend development experience
+Strong problem-solving skills and attention to detail
