@@ -10,8 +10,14 @@ import {
   IconMsg,
   IconOffer,
   IconStar,
+  IconUsers,
 } from "@/components/DashShell";
 import { applicants, postedJobs } from "@/data/mock";
+import {
+  getCompanyTeam,
+  reviewJoinRequest,
+  type CompanyTeam,
+} from "@/lib/company";
 import { Profile, getProfile } from "@/lib/profile";
 
 type View =
@@ -21,15 +27,29 @@ type View =
   | "shortlist"
   | "interviews"
   | "email"
-  | "offers";
+  | "offers"
+  | "team";
 
 export default function RecruiterPage() {
   const [user, setLocal] = useState<Profile | null>(null);
   const [view, setView] = useState<View>("home");
   const [shortlisted, setShortlisted] = useState<string[]>(["a3", "a4"]);
+  const [team, setTeam] = useState<CompanyTeam | null>(null);
+  const [teamError, setTeamError] = useState("");
+  const [reviewing, setReviewing] = useState<number | null>(null);
+
+  async function loadTeam() {
+    try {
+      setTeamError("");
+      setTeam(await getCompanyTeam());
+    } catch (err) {
+      setTeamError(err instanceof Error ? err.message : "Could not load team.");
+    }
+  }
 
   useEffect(() => {
     getProfile().then(setLocal);
+    loadTeam();
   }, []);
 
   const company = user?.company_name ?? "Your company";
@@ -44,6 +64,7 @@ export default function RecruiterPage() {
     { label: "Interview", icon: <IconCal />, id: "interviews" as View },
     { label: "Email", icon: <IconMsg />, id: "email" as View },
     { label: "Offers", icon: <IconOffer />, id: "offers" as View },
+    { label: "Team", icon: <IconUsers />, id: "team" as View },
   ];
 
   function toggleShortlist(id: string) {
@@ -72,7 +93,32 @@ export default function RecruiterPage() {
               name={name}
               title={title}
               onPost={() => setView("jobs")}
+              onTeam={() => setView("team")}
             />
+            {team || teamError ? (
+              <div className="mt-8">
+                <TeamPanel
+                  team={team}
+                  error={teamError}
+                  reviewing={reviewing}
+                  onReview={async (id, action) => {
+                    setReviewing(id);
+                    try {
+                      await reviewJoinRequest(id, action);
+                      await loadTeam();
+                    } catch (err) {
+                      setTeamError(
+                        err instanceof Error
+                          ? err.message
+                          : "Could not update request.",
+                      );
+                    } finally {
+                      setReviewing(null);
+                    }
+                  }}
+                />
+              </div>
+            ) : null}
             <section className="mt-8">
               <div className="mb-4">
                 <h2 className="font-display text-xl font-bold">Candidates</h2>
@@ -186,6 +232,29 @@ export default function RecruiterPage() {
           </Panel>
         ) : null}
 
+        {view === "team" ? (
+          <TeamPanel
+            team={team}
+            error={teamError}
+            reviewing={reviewing}
+            onReview={async (id, action) => {
+              setReviewing(id);
+              try {
+                await reviewJoinRequest(id, action);
+                await loadTeam();
+              } catch (err) {
+                setTeamError(
+                  err instanceof Error
+                    ? err.message
+                    : "Could not update request.",
+                );
+              } finally {
+                setReviewing(null);
+              }
+            }}
+          />
+        ) : null}
+
         {view === "offers" ? (
           <Panel title="Offer letters" sub="Generate an offer. Company settings stay with admin.">
             <SimpleForm
@@ -212,24 +281,16 @@ function ProfileCard({
   name,
   title,
   onPost,
+  onTeam,
 }: {
   company: string;
   name: string;
   title: string;
   onPost: () => void;
+  onTeam: () => void;
 }) {
   return (
     <>
-      <div className="mb-4 h-1 overflow-hidden rounded-full bg-line">
-        <div className="h-full w-[70%] bg-brand" />
-      </div>
-      <div className="mb-6 flex flex-wrap items-center gap-2 border border-line bg-elevated px-4 py-3 text-sm">
-        <span className="text-amber-700">⚠</span>
-        <p className="text-muted">
-          Company profile incomplete.{" "}
-          <span className="font-semibold text-brand">Recruiters can&apos;t edit company settings.</span>
-        </p>
-      </div>
       <section className="border border-line bg-elevated px-5 py-6 sm:px-7">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex gap-4">
@@ -245,13 +306,22 @@ function ProfileCard({
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onPost}
-            className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-deep"
-          >
-            Post a job
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onTeam}
+              className="rounded-md border border-line px-4 py-2 text-sm font-semibold hover:bg-soft"
+            >
+              Team
+            </button>
+            <button
+              type="button"
+              onClick={onPost}
+              className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-deep"
+            >
+              Post a job
+            </button>
+          </div>
         </div>
         <div className="mt-6 border-t border-line pt-5">
           <p className="text-sm font-medium">Hiring status</p>
@@ -265,6 +335,147 @@ function ProfileCard({
         </div>
       </section>
     </>
+  );
+}
+
+function TeamPanel({
+  team,
+  error,
+  reviewing,
+  onReview,
+}: {
+  team: CompanyTeam | null;
+  error: string;
+  reviewing: number | null;
+  onReview: (id: number, action: "approve" | "reject") => void;
+}) {
+  const groups: { key: keyof CompanyTeam["groups"]; title: string }[] = [
+    { key: "founder", title: "Founder" },
+    { key: "recruiter", title: "Recruiters" },
+    { key: "hiring_manager", title: "Hiring managers" },
+    { key: "interviewer", title: "Interviewers" },
+  ];
+
+  return (
+    <section>
+      <div className="mb-4">
+        <h2 className="font-display text-xl font-bold">Team</h2>
+        <p className="mt-1 text-sm text-muted">
+          Everyone here belongs to {team?.company_name ?? "this company"} only.
+          {team?.is_founder
+            ? " Approve join requests to grant access."
+            : ""}
+        </p>
+      </div>
+      {error ? (
+        <p className="mb-4 text-sm text-red-600" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {!team ? (
+        <p className="border border-line bg-elevated px-5 py-10 text-center text-sm text-muted">
+          Loading team…
+        </p>
+      ) : (
+        <div className="space-y-5">
+          {team.is_founder ? (
+            <div className="border border-line bg-elevated">
+              <div className="border-b border-line px-5 py-3">
+                <p className="text-sm font-semibold">Pending requests</p>
+              </div>
+              {team.pending.length === 0 ? (
+                <p className="px-5 py-6 text-sm text-muted">
+                  No one is waiting to join.
+                </p>
+              ) : (
+                <ul className="divide-y divide-line">
+                  {team.pending.map((row) => (
+                    <li
+                      key={row.id}
+                      className="flex flex-wrap items-center justify-between gap-3 px-5 py-4"
+                    >
+                      <div>
+                        <p className="font-semibold">{row.full_name}</p>
+                        <p className="text-sm text-muted">
+                          {row.role_label}
+                          {row.email ? ` · ${row.email}` : ""}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          disabled={reviewing === row.id}
+                          onClick={() => onReview(row.id, "reject")}
+                          className="rounded-md border border-line px-3 py-1.5 text-xs font-semibold hover:bg-soft"
+                        >
+                          Reject
+                        </button>
+                        <button
+                          type="button"
+                          disabled={reviewing === row.id}
+                          onClick={() => onReview(row.id, "approve")}
+                          className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-deep"
+                        >
+                          {reviewing === row.id ? "Saving…" : "Approve"}
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : null}
+
+          {groups.map((group) => {
+            const members = team.groups[group.key] || [];
+            return (
+              <div key={group.key} className="border border-line bg-elevated">
+                <div className="border-b border-line px-5 py-3">
+                  <p className="text-sm font-semibold">
+                    {group.title}
+                    <span className="ml-2 font-normal text-muted">
+                      {members.length}
+                    </span>
+                  </p>
+                </div>
+                {members.length === 0 ? (
+                  <p className="px-5 py-6 text-sm text-muted">None yet.</p>
+                ) : (
+                  <ul className="divide-y divide-line">
+                    {members.map((member) => (
+                      <li
+                        key={member.user_id}
+                        className="flex items-center gap-3 px-5 py-4"
+                      >
+                        {member.profile_image_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={member.profile_image_url}
+                            alt=""
+                            className="h-9 w-9 rounded-full object-cover"
+                          />
+                        ) : (
+                          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-soft text-sm font-bold text-brand">
+                            {member.full_name.slice(0, 1)}
+                          </span>
+                        )}
+                        <div>
+                          <p className="font-semibold">{member.full_name}</p>
+                          <p className="text-sm text-muted">
+                            {member.label}
+                            {member.email ? ` · ${member.email}` : ""}
+                          </p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 

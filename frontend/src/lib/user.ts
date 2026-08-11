@@ -7,7 +7,20 @@ export type AppRole =
 
 /** UI role grouping used by dashboards */
 export type Role = "candidate" | "company";
-export type TeamRole = "recruiter" | "manager" | "interviewer";
+export type TeamRole = "founder" | "recruiter" | "manager" | "interviewer";
+export type MembershipRole =
+  | "founder"
+  | "recruiter"
+  | "hiring_manager"
+  | "interviewer";
+
+export type JoinRequest = {
+  id: number;
+  company_id: number;
+  requested_role: string;
+  status: string;
+  company_name: string | null;
+};
 
 export type AppUser = {
   id: string;
@@ -17,12 +30,15 @@ export type AppUser = {
   profile_image_url: string | null;
   role: Role | null;
   team_role: TeamRole | null;
+  membership_role?: MembershipRole | null;
   /** candidate row id when role is candidate */
   candidate_id?: number | null;
   location?: string | null;
+  company_id?: number | null;
   company_name?: string | null;
   job_title?: string | null;
   headline?: string | null;
+  join_request?: JoinRequest | null;
   onboarding_complete: boolean;
 };
 
@@ -55,18 +71,26 @@ export function candidateIdFromSlug(slug: string) {
 }
 
 export function isOnboarded(
-  user: Pick<AppUser, "role" | "team_role" | "candidate_id">,
+  user: Pick<AppUser, "role" | "team_role" | "candidate_id" | "company_id">,
 ) {
+  if (user.candidate_id) return true;
+  if (user.company_id) return true;
   if (user.role === "candidate") return Boolean(user.candidate_id);
-  if (user.role === "company") return Boolean(user.team_role);
+  if (user.role === "company") return Boolean(user.company_id);
   return false;
 }
 
 /** App home after a finished onboarding — never the public /u/ profile. */
 export function homeFor(
-  user: Pick<AppUser, "role" | "team_role" | "full_name" | "candidate_id" | "id">,
+  user: Pick<
+    AppUser,
+    "role" | "team_role" | "membership_role" | "full_name" | "candidate_id" | "id"
+  >,
 ) {
-  if (user.role === "candidate") return "/candidate";
+  if (user.role === "candidate" || user.candidate_id) return "/candidate";
+  if (user.membership_role === "founder" || user.team_role === "founder") {
+    return "/recruiter";
+  }
   if (user.team_role === "manager") return "/manager";
   if (user.team_role === "interviewer") return "/interviewer";
   if (user.role === "company") return "/recruiter";
@@ -75,7 +99,7 @@ export function homeFor(
 
 /** Login / OAuth landing. Incomplete users always go to onboarding. */
 export function afterAuthPath(
-  user: Pick<AppUser, "role" | "team_role" | "candidate_id">,
+  user: Pick<AppUser, "role" | "team_role" | "candidate_id" | "company_id">,
   next?: string | null,
 ) {
   if (!isOnboarded(user)) {
@@ -86,6 +110,7 @@ export function afterAuthPath(
 }
 
 export function teamLabel(team?: TeamRole | null) {
+  if (team === "founder") return "Founder";
   if (team === "manager") return "Hiring manager";
   if (team === "interviewer") return "Interviewer";
   return "Recruiter";
@@ -98,13 +123,15 @@ export function splitName(fullName: string) {
   return { first_name, last_name };
 }
 
-export function roleNameForTeam(team: TeamRole): AppRole {
+export function roleNameForTeam(team: TeamRole): AppRole | "founder" {
+  if (team === "founder") return "founder";
   if (team === "manager") return "hiring_manager";
   if (team === "interviewer") return "interviewer";
   return "recruiter";
 }
 
 export function teamFromRoleName(name?: string | null): TeamRole | null {
+  if (name === "founder") return "founder";
   if (name === "hiring_manager") return "manager";
   if (name === "interviewer") return "interviewer";
   if (name === "recruiter") return "recruiter";

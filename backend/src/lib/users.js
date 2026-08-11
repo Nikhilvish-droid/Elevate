@@ -4,6 +4,12 @@ const {
   teamFromRoleName,
   teamLabel,
 } = require("./helpers");
+const {
+  getMembership,
+  getPendingJoinRequest,
+  membershipTeamRole,
+  membershipLabel,
+} = require("./company");
 
 async function getCandidateId(supabase, userId) {
   const { data, error } = await supabase
@@ -73,14 +79,26 @@ async function assignRole(supabase, userId, roleName) {
 }
 
 async function roleNamesFor(supabase, userId) {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("user_roles")
     .select("roles(name)")
     .eq("user_id", userId);
+  if (error) return [];
 
   return (data || [])
     .map((row) => unwrap(row.roles)?.name)
     .filter(Boolean);
+}
+
+async function loadCandidateRow(supabase, userId) {
+  const { data, error } = await supabase
+    .from("candidates")
+    .select("id, location, professional_summary")
+    .eq("user_id", userId)
+    .order("id", { ascending: true })
+    .limit(1);
+  if (error) return null;
+  return data?.[0] ?? null;
 }
 
 async function buildSessionProfile(supabase, user) {
@@ -104,44 +122,43 @@ async function buildSessionProfile(supabase, user) {
   }
 
   const names = await roleNamesFor(supabase, user.id);
-  const isCandidate = names.includes("candidate");
-  const teamRole =
-    teamFromRoleName(
-      names.find((n) =>
-        ["recruiter", "hiring_manager", "interviewer"].includes(n),
-      ),
-    ) ?? null;
+  const cand = await loadCandidateRow(supabase, user.id);
+  const isCandidate = names.includes("candidate") || Boolean(cand);
 
-  let candidate_id = null;
-  let location = null;
-  let headline = null;
-  let company_name = null;
-
-  if (isCandidate) {
-    const { data: cand } = await supabase
-      .from("candidates")
-      .select("id, location, professional_summary")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    candidate_id = cand?.id ?? null;
-    location = cand?.location ?? null;
-    headline = cand?.professional_summary ?? null;
+  let membership = null;
+  let pendingJoin = null;
+  try {
+    membership = await getMembership(supabase, user.id);
+  } catch {
+    membership = null;
+  }
+  if (!membership) {
+    try {
+      pendingJoin = await getPendingJoinRequest(supabase, user.id);
+    } catch {
+      pendingJoin = null;
+    }
   }
 
-  if (teamRole) {
-    const { data: membership } = await supabase
-      .from("company_members")
-      .select("companies(name)")
-      .eq("user_id", user.id)
-      .limit(1)
-      .maybeSingle();
-    company_name = unwrap(membership?.companies)?.name ?? null;
-  }
+  const membershipRole = membership?.membership_role ?? null;
+  const teamRole = membership
+    ? membershipTeamRole(membershipRole)
+    : pendingJoin
+      ? teamFromRoleName(pendingJoin.requested_role)
+      : null;
 
-  const role = isCandidate ? "candidate" : teamRole ? "company" : null;
+  const candidate_id = cand?.id ?? null;
+  const location = cand?.location ?? null;
+  const headline = cand?.professional_summary ?? null;
+
+  const role = isCandidate
+    ? "candidate"
+    : membership || pendingJoin
+      ? "company"
+      : null;
   const onboarding_complete = isCandidate
     ? Boolean(candidate_id)
-    : Boolean(teamRole);
+    : Boolean(membership?.company_id);
 
   return {
     id: appUser.id,
@@ -151,11 +168,18 @@ async function buildSessionProfile(supabase, user) {
     profile_image_url: appUser.profile_image_url,
     role,
     team_role: teamRole,
+    membership_role: membershipRole,
     candidate_id,
     location,
     headline,
-    company_name,
-    job_title: teamRole ? teamLabel(teamRole) : null,
+    company_id: membership?.company_id ?? null,
+    company_name: membership?.company_name ?? pendingJoin?.company_name ?? null,
+    job_title: membershipRole
+      ? membershipLabel(membershipRole)
+      : teamRole
+        ? teamLabel(teamRole)
+        : null,
+    join_request: pendingJoin,
     onboarding_complete,
   };
 }

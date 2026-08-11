@@ -21,6 +21,7 @@ function displayName(user, fallback = "User") {
 }
 
 function teamFromRoleName(name) {
+  if (name === "founder") return "founder";
   if (name === "hiring_manager") return "manager";
   if (name === "interviewer") return "interviewer";
   if (name === "recruiter") return "recruiter";
@@ -28,12 +29,14 @@ function teamFromRoleName(name) {
 }
 
 function roleNameForTeam(team) {
+  if (team === "founder") return "founder";
   if (team === "manager") return "hiring_manager";
   if (team === "interviewer") return "interviewer";
   return "recruiter";
 }
 
 function teamLabel(team) {
+  if (team === "founder") return "Founder";
   if (team === "manager") return "Hiring manager";
   if (team === "interviewer") return "Interviewer";
   return "Recruiter";

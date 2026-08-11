@@ -16,6 +16,7 @@ export {
   isOnboarded,
   profilePath,
   profileSlug,
+  teamFromRoleName,
   teamLabel,
 } from "@/lib/user";
 
@@ -54,6 +55,7 @@ export async function getProfile(): Promise<AppUser | null> {
       profileCache = profile;
       return profile;
     })
+    .catch(() => null)
     .finally(() => {
       profileInflight = null;
     });
@@ -99,16 +101,22 @@ export async function saveCandidateOnboarding(input: CandidateOnboardingInput) {
 
 export type CompanyOnboardingInput = {
   full_name: string;
+  phone?: string | null;
+  profile_image_url?: string | null;
   company_name: string;
-  team_role: TeamRole;
   website?: string | null;
   industry?: string | null;
   company_size?: string | null;
   description?: string | null;
   linkedin_url?: string | null;
   twitter_url?: string | null;
+  github_url?: string | null;
   logo_url?: string | null;
-  office_locations?: string | null;
+  address_line?: string | null;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  postal_code?: string | null;
 };
 
 export async function saveCompanyOnboarding(input: CompanyOnboardingInput) {

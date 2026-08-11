@@ -8,6 +8,8 @@ const onboardingRoutes = require("./src/routes/onboarding");
 const candidateRoutes = require("./src/routes/candidate");
 const jobRoutes = require("./src/routes/jobs");
 const profileRoutes = require("./src/routes/profiles");
+const companiesRoutes = require("./src/routes/companies");
+const companyRoutes = require("./src/routes/company");
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -31,6 +33,9 @@ app.get("/health", (_req, res) => {
 app.use("/api/profiles", profileRoutes);
 app.use("/api", requireAuth, sessionRoutes);
 app.use("/api/onboarding", requireAuth, onboardingRoutes);
+app.use("/api/companies", requireAuth, companiesRoutes);
+app.use("/api/company-requests", requireAuth, companyRoutes.requests);
+app.use("/api/company", requireAuth, companyRoutes.admin);
 app.use("/api/candidate", requireAuth, candidateRoutes);
 app.use("/api/jobs", requireAuth, jobRoutes);
 

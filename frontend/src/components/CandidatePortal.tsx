@@ -22,8 +22,16 @@ export function CandidatePortal({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     getProfile().then((profile) => {
-      if (!profile || !isOnboarded(profile) || profile.role !== "candidate") {
-        router.replace("/onboarding?hint=candidate");
+      if (!profile) {
+        router.replace("/auth?tab=login");
+        return;
+      }
+      if (!isOnboarded(profile) || (profile.role && profile.role !== "candidate")) {
+        router.replace(
+          profile.role === "company"
+            ? "/onboarding?hint=company"
+            : "/onboarding?hint=candidate",
+        );
       }
     });
   }, [router]);

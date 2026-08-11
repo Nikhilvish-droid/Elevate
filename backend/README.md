@@ -48,7 +48,12 @@ Get a token after login: open `http://localhost:3000/api/auth/token`
 | POST | `/api/auth/sync` | Upsert `users` after login, return session profile |
 | GET | `/api/me` | Session profile (role, onboarding, candidate/company) |
 | POST | `/api/onboarding/candidate` | Candidate onboarding |
-| POST | `/api/onboarding/company` | Company onboarding |
+| POST | `/api/onboarding/company` | Founder: create company + founder membership |
+| GET | `/api/companies?q=` | Search companies by name (min 2 chars) |
+| POST | `/api/company-requests` | Request to join `{ company_id, requested_role }` |
+| GET | `/api/company-requests/mine` | Current user's join requests |
+| PATCH | `/api/company-requests/:id` | Founder `{ "action": "approve" }` or `{ "action": "reject" }` |
+| GET | `/api/company/members` | Members grouped by role + pending (founder) |
 | GET/PUT | `/api/candidate/profile` | Candidate profile |
 | GET | `/api/candidate/applications` | Applied jobs |
 | GET | `/api/candidate/interviews` | Interview schedule |

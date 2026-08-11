@@ -24,12 +24,6 @@ type NavItem = {
   active?: boolean;
 };
 
-const teamHomes: { role: TeamRole; href: string; label: string }[] = [
-  { role: "recruiter", href: "/recruiter", label: "Recruiter" },
-  { role: "manager", href: "/manager", label: "Hiring manager" },
-  { role: "interviewer", href: "/interviewer", label: "Interviewer" },
-];
-
 export function DashShell({
   role,
   teamRole,
@@ -57,21 +51,36 @@ export function DashShell({
       if (cancelled) return;
 
       if (role === "candidate") {
-        if (!profile || !isOnboarded(profile) || profile.role !== "candidate") {
-          router.replace("/onboarding?hint=candidate");
+        if (!profile) {
+          router.replace("/auth?tab=login");
           return;
         }
-        setLocal(profile);
+        if (profile.candidate_id || (isOnboarded(profile) && profile.role === "candidate")) {
+          setLocal(profile);
+          return;
+        }
+        router.replace("/onboarding?hint=candidate");
         return;
       }
 
-      if (!profile || !isOnboarded(profile) || profile.role !== "company") {
+      if (!profile || !isOnboarded(profile) || !profile.company_id) {
         router.replace("/onboarding?hint=company");
         return;
       }
 
-      const team = teamRole ?? profile.team_role ?? "recruiter";
-      setLocal({ ...profile, team_role: team });
+      const actual = profile.team_role;
+      if (teamRole && actual && actual !== teamRole) {
+        const allowed =
+          (teamRole === "recruiter" &&
+            (actual === "recruiter" || actual === "founder")) ||
+          actual === teamRole;
+        if (!allowed) {
+          router.replace(homeFor(profile));
+          return;
+        }
+      }
+
+      setLocal(profile);
     })();
     return () => {
       cancelled = true;
@@ -110,7 +119,7 @@ export function DashShell({
   const badge =
     role === "candidate"
       ? display
-      : teamLabel(teamRole ?? user.team_role ?? undefined);
+      : `${user.company_name ?? "Company"} · ${teamLabel(user.team_role ?? teamRole)}`;
 
   const navClass = (active?: boolean) =>
     `flex flex-col items-center gap-1 rounded-md px-2 py-2.5 text-[10px] font-medium hover:bg-soft hover:text-ink ${
@@ -190,44 +199,11 @@ export function DashShell({
                   <p className="text-sm font-semibold">{display}</p>
                   <p className="text-xs text-muted">{user.email}</p>
                 </div>
-                {role === "candidate" ? (
-                  <Link
-                    href="/recruiter"
-                    className="block px-3 py-2 text-sm hover:bg-soft"
-                    onClick={() => setMenu(false)}
-                  >
-                    Switch to recruiter
-                  </Link>
-                ) : (
-                  <>
-                    {teamHomes.map((t) => (
-                      <Link
-                        key={t.role}
-                        href={t.href}
-                        className="block px-3 py-2 text-sm hover:bg-soft"
-                        onClick={() => {
-                          setLocal({
-                            ...user,
-                            role: "company",
-                            team_role: t.role,
-                            job_title: t.label,
-                          });
-                          setMenu(false);
-                        }}
-                      >
-                        {t.label}
-                        {teamRole === t.role ? " ✓" : ""}
-                      </Link>
-                    ))}
-                    <Link
-                      href="/candidate"
-                      className="block border-t border-line px-3 py-2 text-sm hover:bg-soft"
-                      onClick={() => setMenu(false)}
-                    >
-                      Candidate view
-                    </Link>
-                  </>
-                )}
+                <p className="px-3 py-2 text-xs text-muted">
+                  {role === "company"
+                    ? "Access is limited to your approved company."
+                    : "Candidate workspace"}
+                </p>
                 <button
                   type="button"
                   onClick={logout}
@@ -243,6 +219,16 @@ export function DashShell({
         <main className="flex-1 px-4 py-6 sm:px-8 sm:py-8">{children}</main>
       </div>
     </div>
+  );
+}
+
+export function IconUsers() {
+  return (
+    <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <circle cx="7" cy="8" r="2.5" />
+      <circle cx="13" cy="8" r="2.5" />
+      <path d="M3 16c.6-2.2 2.2-3.5 4-3.5s3.4 1.3 4 3.5M10 16c.6-2.2 2.2-3.5 4-3.5s3.4 1.3 4 3.5" />
+    </svg>
   );
 }
 

@@ -1,5 +1,5 @@
 const express = require("express");
-const { asyncHandler, splitName, roleNameForTeam, fail } = require("../lib/helpers");
+const { asyncHandler, splitName, fail } = require("../lib/helpers");
 const { ensureAppUser, assignRole, buildSessionProfile } = require("../lib/users");
 
 const router = express.Router();
@@ -42,11 +42,13 @@ router.post(
       updated_at: new Date().toISOString(),
     };
 
-    const { data: existing } = await req.supabase
+    const { data: existingRows } = await req.supabase
       .from("candidates")
       .select("id")
       .eq("user_id", req.user.id)
-      .maybeSingle();
+      .order("id", { ascending: true })
+      .limit(1);
+    const existing = existingRows?.[0];
 
     let candidateId;
     if (existing?.id) {
@@ -133,58 +135,96 @@ router.post(
   asyncHandler(async (req, res) => {
     const input = req.body || {};
     if (!input.full_name?.trim() || !input.company_name?.trim()) {
-      return fail(res, 400, "Name and company are required.");
+      return fail(res, 400, "Founder name and company name are required.");
     }
-    if (!input.team_role) {
-      return fail(res, 400, "Team role is required.");
+
+    const { getMembership } = require("../lib/company");
+    const existing = await getMembership(req.supabase, req.user.id);
+    if (existing) {
+      return fail(res, 409, "You already belong to a company.");
     }
 
     await ensureAppUser(req.supabase, req.user, input.full_name);
-    await assignRole(req.supabase, req.user.id, roleNameForTeam(input.team_role));
 
     await req.supabase
       .from("users")
       .update({
         full_name: input.full_name.trim(),
+        phone: input.phone || null,
+        profile_image_url: input.profile_image_url || null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", req.user.id);
 
-    const { data: company, error: companyErr } = await req.supabase
-      .from("companies")
-      .insert({
-        name: input.company_name.trim(),
-        website_url: input.website || null,
-        industry: input.industry || null,
-        company_size: input.company_size || null,
-        description: input.description || null,
-        linkedin_url: input.linkedin_url || null,
-        twitter_url: input.twitter_url || null,
-        logo_url: input.logo_url || null,
-      })
-      .select("id")
-      .single();
-    if (companyErr) throw new Error(companyErr.message);
+    const payload = {
+      name: input.company_name.trim(),
+      website_url: input.website || null,
+      industry: input.industry || null,
+      company_size: input.company_size || null,
+      description: input.description || null,
+      linkedin_url: input.linkedin_url || null,
+      twitter_url: input.twitter_url || null,
+      github_url: input.github_url || null,
+      logo_url: input.logo_url || null,
+      address_line: input.address_line || null,
+      city: input.city || input.office_locations || null,
+      state: input.state || null,
+      country: input.country || null,
+      postal_code: input.postal_code || null,
+    };
 
-    const { error: memberErr } = await req.supabase.from("company_members").insert({
-      company_id: company.id,
-      user_id: req.user.id,
-    });
-    if (memberErr) throw new Error(memberErr.message);
+    const { data: rpcId, error: rpcErr } = await req.supabase.rpc(
+      "create_company_as_founder",
+      { payload },
+    );
 
-    if (input.office_locations?.trim()) {
-      await req.supabase.from("company_locations").insert({
+    if (rpcErr) {
+      if (/already belong/i.test(rpcErr.message || "")) {
+        return fail(res, 409, "You already belong to a company.");
+      }
+      const { data: company, error: companyErr } = await req.supabase
+        .from("companies")
+        .insert({
+          name: payload.name,
+          website_url: payload.website_url,
+          industry: payload.industry,
+          company_size: payload.company_size,
+          description: payload.description,
+          linkedin_url: payload.linkedin_url,
+          twitter_url: payload.twitter_url,
+          github_url: payload.github_url,
+          logo_url: payload.logo_url,
+        })
+        .select("id")
+        .single();
+      if (companyErr) {
+        throw new Error(
+          companyErr.message.includes("row-level security")
+            ? 'Company create is blocked by RLS. Run supabase/company-join.sql in the Supabase SQL editor, then try again.'
+            : companyErr.message,
+        );
+      }
+
+      const { error: memberErr } = await req.supabase.from("company_members").insert({
         company_id: company.id,
-        city: input.office_locations.trim(),
-        is_headquarters: true,
-      });
-    }
-    if (input.team_role === "interviewer") {
-      await req.supabase.from("interviewers").insert({
         user_id: req.user.id,
-        company_id: company.id,
-        designation: "Interviewer",
+        role: "founder",
       });
+      if (memberErr) throw new Error(memberErr.message);
+
+      if (payload.city || payload.address_line) {
+        await req.supabase.from("company_locations").insert({
+          company_id: company.id,
+          address_line: payload.address_line,
+          city: payload.city,
+          state: payload.state,
+          country: payload.country,
+          postal_code: payload.postal_code,
+          is_headquarters: true,
+        });
+      }
+    } else if (!rpcId) {
+      throw new Error("Could not create company.");
     }
 
     res.json(await buildSessionProfile(req.supabase, req.user));
