@@ -99,6 +99,15 @@ export function DashShell({
     };
   }, [role, teamRole, router]);
 
+  useEffect(() => {
+    if (role !== "candidate" || !user?.full_name) return;
+    const previous = document.title;
+    document.title = `${user.full_name} · Elevate`;
+    return () => {
+      document.title = previous;
+    };
+  }, [role, user?.full_name]);
+
   async function logout() {
     await signOut();
     router.push("/");
@@ -121,7 +130,7 @@ export function DashShell({
 
   const badge =
     role === "candidate"
-      ? "Candidate"
+      ? display
       : teamLabel(teamRole ?? user.team_role ?? undefined);
 
   const navClass = (active?: boolean) =>
@@ -167,7 +176,7 @@ export function DashShell({
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 items-center justify-between border-b border-line bg-elevated px-4 sm:px-6">
-          <p className="text-sm text-muted">{badge}</p>
+          <p className="truncate text-sm font-semibold">{badge}</p>
           <div className="relative flex items-center gap-3">
             <ThemeToggle className="rounded-md border border-line px-2.5 py-1.5 text-xs font-semibold text-muted hover:bg-soft hover:text-ink" />
             <button
@@ -182,9 +191,18 @@ export function DashShell({
               onClick={() => setMenu((v) => !v)}
               className="flex items-center gap-2 rounded-md px-1 py-1 hover:bg-soft"
             >
-              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-soft text-xs font-bold text-brand">
-                {display.slice(0, 1).toUpperCase()}
-              </span>
+              {user.profile_image_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={user.profile_image_url}
+                  alt=""
+                  className="h-8 w-8 rounded-full object-cover"
+                />
+              ) : (
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-soft text-xs font-bold text-brand">
+                  {display.slice(0, 1).toUpperCase()}
+                </span>
+              )}
             </button>
             {menu ? (
               <div className="absolute right-0 top-11 z-20 w-56 border border-line bg-elevated py-2 shadow-sm">

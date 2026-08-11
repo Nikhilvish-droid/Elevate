@@ -29,8 +29,35 @@ export type AppUser = {
 /** @deprecated alias — dashboards still import Profile */
 export type Profile = AppUser;
 
-export function homeFor(user: Pick<AppUser, "role" | "team_role">) {
-  if (user.role === "candidate") return "/candidate";
+export function profileSlug(name?: string | null) {
+  const slug = (name || "profile")
+    .toLowerCase()
+    .replace(/['’]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "profile";
+}
+
+/** Unique share URL: /u/nikhil-vishwakarma-42 — id is the candidates.id PK */
+export function profilePath(
+  user: Pick<AppUser, "full_name" | "candidate_id" | "id">,
+) {
+  if (user.candidate_id) {
+    return `/u/${profileSlug(user.full_name)}-${user.candidate_id}`;
+  }
+  return `/u/${user.id}`;
+}
+
+export function candidateIdFromSlug(slug: string) {
+  const match = String(slug).match(/-(\d+)$/);
+  if (!match) return null;
+  return Number(match[1]);
+}
+
+export function homeFor(
+  user: Pick<AppUser, "role" | "team_role" | "full_name" | "candidate_id" | "id">,
+) {
+  if (user.role === "candidate") return profilePath(user);
   if (user.team_role === "manager") return "/manager";
   if (user.team_role === "interviewer") return "/interviewer";
   return "/recruiter";

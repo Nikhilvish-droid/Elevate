@@ -12,7 +12,7 @@ import {
 } from "@/components/Auth";
 import { createClient } from "@/lib/supabase/client";
 import { getAccessToken } from "@/lib/auth/jwt";
-import { getProfile, homeFor } from "@/lib/profile";
+import { homeFor, syncAuthUser } from "@/lib/profile";
 
 function AuthForm() {
   const router = useRouter();
@@ -45,7 +45,7 @@ function AuthForm() {
       return;
     }
 
-    const profile = await getProfile();
+    const profile = await syncAuthUser();
     if (profile?.onboarding_complete && profile.role) {
       router.push(homeFor(profile));
       router.refresh();

@@ -87,11 +87,13 @@ export function PhotoUpload({
   label = "Profile picture",
   hint = "JPG or PNG · up to 2 MB",
   file,
+  existingUrl,
   onChange,
 }: {
   label?: string;
   hint?: string;
   file: File | null;
+  existingUrl?: string | null;
   onChange: (file: File | null) => void;
 }) {
   const inputId = useId();
@@ -100,13 +102,13 @@ export function PhotoUpload({
 
   useEffect(() => {
     if (!file) {
-      setPreview(null);
+      setPreview(existingUrl ?? null);
       return;
     }
     const url = URL.createObjectURL(file);
     setPreview(url);
     return () => URL.revokeObjectURL(url);
-  }, [file]);
+  }, [file, existingUrl]);
 
   return (
     <div>
@@ -148,7 +150,7 @@ export function PhotoUpload({
               onClick={() => inputRef.current?.click()}
               className={`${btnGhost} px-3 py-2 text-xs`}
             >
-              {file ? "Replace photo" : "Upload photo"}
+              {file || existingUrl ? "Upload a new photo" : "Upload photo"}
             </button>
             {file ? (
               <button
