@@ -55,8 +55,28 @@ async function loadRelated(supabase, candidateId) {
     experience: experience || [],
     certifications: certs || [],
     skills,
-    resumes: resumes || [],
+    resumes: await signResumeUrls(supabase, resumes || []),
   };
+}
+
+function resumeStoragePath(fileUrl) {
+  if (!fileUrl) return null;
+  if (!fileUrl.startsWith("http")) return fileUrl;
+  const match = fileUrl.match(/\/object\/(?:sign|public)\/resumes\/([^?]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+async function signResumeUrls(supabase, resumes) {
+  return Promise.all(
+    resumes.map(async (row) => {
+      const path = resumeStoragePath(row.file_url);
+      if (!path) return row;
+      const { data } = await supabase.storage
+        .from("resumes")
+        .createSignedUrl(path, 60 * 60);
+      return data?.signedUrl ? { ...row, file_url: data.signedUrl } : row;
+    }),
+  );
 }
 
 async function loadFullProfile(supabase, user, candidateId) {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiWithToken } from "@/lib/api";
 import { createClient } from "@/lib/supabase/server";
-import { homeFor, type AppUser } from "@/lib/user";
+import { afterAuthPath, type AppUser } from "@/lib/user";
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
@@ -33,13 +33,11 @@ export async function GET(request: Request) {
       "/api/auth/sync",
       { method: "POST" },
     );
-
-    if (profile.onboarding_complete) {
-      return NextResponse.redirect(`${origin}${homeFor(profile)}`);
-    }
+    return NextResponse.redirect(
+      `${origin}${afterAuthPath(profile, next)}`,
+    );
   } catch {
-    // Backend down or RLS — still land on onboarding with a valid session.
+    const fallback = next.startsWith("/onboarding") ? next : "/onboarding";
+    return NextResponse.redirect(`${origin}${fallback}`);
   }
-
-  return NextResponse.redirect(`${origin}${next}`);
 }

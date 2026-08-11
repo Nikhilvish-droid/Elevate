@@ -22,7 +22,7 @@ export default function AssessmentsPage() {
         Coding assessments
       </h1>
       <p className="mt-1 text-sm text-muted">
-        Tests assigned to your applications — timer and auto-submit happen when you start.
+        Tests assigned to your applications. Scores show here after you submit.
       </p>
       {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
 

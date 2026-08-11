@@ -8,7 +8,7 @@ import {
   saveCandidateProfile,
   type CandidateFull,
 } from "@/lib/candidate";
-import { getProfile, homeFor } from "@/lib/profile";
+import { getProfile, homeFor, profilePath } from "@/lib/profile";
 import { uploadAvatar, uploadResume } from "@/lib/storage";
 
 const ROLE_OPTIONS = [
@@ -49,6 +49,7 @@ type Edu = {
   institution_name: string;
   degree: string;
   field_of_study: string;
+  start_year: string;
   end_year: string;
 };
 
@@ -58,6 +59,7 @@ type Exp = {
   start_date: string;
   end_date: string;
   is_current: boolean;
+  description: string;
 };
 
 export default function CandidateProfilePage() {
@@ -68,7 +70,11 @@ export default function CandidateProfilePage() {
   const [saved, setSaved] = useState("");
 
   const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
   const [location, setLocation] = useState("");
+  const [certifications, setCertifications] = useState<string[]>([]);
+  const [certDraft, setCertDraft] = useState("");
+  const [homeHref, setHomeHref] = useState("/candidate");
   const [primaryRole, setPrimaryRole] = useState("");
   const [years, setYears] = useState("");
   const [openTo, setOpenTo] = useState<string[]>([]);
@@ -90,7 +96,13 @@ export default function CandidateProfilePage() {
 
   function applyFull(c: CandidateFull) {
     setFullName([c.first_name, c.last_name].filter(Boolean).join(" "));
+    setPhone(c.phone ?? "");
     setLocation(c.location ?? "");
+    setCertifications(
+      (c.certifications || [])
+        .map((x) => x.certification_name)
+        .filter(Boolean),
+    );
     setYears(
       c.total_experience_years != null ? String(c.total_experience_years) : "",
     );
@@ -113,6 +125,7 @@ export default function CandidateProfilePage() {
         institution_name: e.institution_name,
         degree: e.degree ?? "",
         field_of_study: e.field_of_study ?? "",
+        start_year: e.start_date ? e.start_date.slice(0, 4) : "",
         end_year: e.end_date ? e.end_date.slice(0, 4) : "",
       })),
     );
@@ -123,6 +136,7 @@ export default function CandidateProfilePage() {
         start_date: e.start_date ?? "",
         end_date: e.end_date ?? "",
         is_current: e.is_current,
+        description: e.description ?? "",
       })),
     );
   }
@@ -138,7 +152,10 @@ export default function CandidateProfilePage() {
         setLoaded(true);
       });
     getProfile().then((p) => {
-      if (p) setShareUrl(`${window.location.origin}${homeFor(p)}`);
+      if (p) {
+        setHomeHref(homeFor(p));
+        setShareUrl(`${window.location.origin}${profilePath(p)}`);
+      }
     });
   }, []);
 
@@ -165,6 +182,7 @@ export default function CandidateProfilePage() {
 
       const next = await saveCandidateProfile({
         full_name: fullName.trim(),
+        phone: phone.trim() || null,
         location: location.trim() || null,
         professional_summary: bio.trim() || null,
         total_experience_years: years ? Number(years) : null,
@@ -178,6 +196,7 @@ export default function CandidateProfilePage() {
           : primaryRole
             ? [primaryRole]
             : [],
+        certifications,
         education,
         experience: experience.map((x) => ({
           ...x,
@@ -226,7 +245,7 @@ export default function CandidateProfilePage() {
       ) : null}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line">
         <nav className="flex gap-5 text-sm" aria-label="Profile sections">
-          <Link href="/candidate" className="py-3 text-muted hover:text-ink">
+          <Link href={homeHref} className="py-3 text-muted hover:text-ink">
             Overview
           </Link>
           <button
@@ -254,7 +273,7 @@ export default function CandidateProfilePage() {
         </nav>
         <div className="flex items-center gap-2 py-2">
           <Link
-            href="/candidate"
+            href={homeHref}
             className="rounded-md border border-line px-3 py-1.5 text-sm font-semibold hover:bg-soft"
           >
             Cancel
@@ -305,6 +324,16 @@ export default function CandidateProfilePage() {
                 onChange={setPhotoFile}
               />
             </div>
+
+            <label className="block text-sm font-medium">
+              Phone
+              <input
+                className={field}
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+91 …"
+              />
+            </label>
 
             <label className="block text-sm font-medium">
               Where are you based?
@@ -396,12 +425,12 @@ export default function CandidateProfilePage() {
               <span className="flex justify-between">
                 Your bio
                 <span className="text-xs font-normal text-muted">
-                  {Math.max(0, 160 - bio.length)}
+                  {bio.length}/2000
                 </span>
               </span>
               <textarea
-                rows={4}
-                maxLength={160}
+                rows={5}
+                maxLength={2000}
                 className={field}
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
@@ -514,6 +543,20 @@ export default function CandidateProfilePage() {
                   />
                   I currently work here
                 </label>
+                <label className="block text-sm font-medium sm:col-span-2">
+                  Description
+                  <textarea
+                    rows={3}
+                    className={field}
+                    value={row.description}
+                    onChange={(e) => {
+                      const next = [...experience];
+                      next[i] = { ...row, description: e.target.value };
+                      setExperience(next);
+                    }}
+                    placeholder="What you worked on"
+                  />
+                </label>
                 <button
                   type="button"
                   className="text-left text-xs font-semibold text-muted hover:text-ink sm:col-span-2"
@@ -535,6 +578,7 @@ export default function CandidateProfilePage() {
                     start_date: "",
                     end_date: "",
                     is_current: false,
+                    description: "",
                   },
                 ])
               }
@@ -586,6 +630,19 @@ export default function CandidateProfilePage() {
                     />
                   </label>
                   <label className="block text-sm font-medium">
+                    Start year
+                    <input
+                      className={field}
+                      value={row.start_year}
+                      onChange={(e) => {
+                        const next = [...education];
+                        next[i] = { ...row, start_year: e.target.value };
+                        setEducation(next);
+                      }}
+                      placeholder="2025"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium">
                     Graduation year
                     <input
                       className={field}
@@ -618,6 +675,7 @@ export default function CandidateProfilePage() {
                     institution_name: "",
                     degree: "",
                     field_of_study: "",
+                    start_year: "",
                     end_year: "",
                   },
                 ])
@@ -664,6 +722,62 @@ export default function CandidateProfilePage() {
               <button
                 type="button"
                 onClick={addSkill}
+                className="shrink-0 rounded-md border border-line px-3 text-sm font-semibold hover:bg-soft"
+              >
+                Add
+              </button>
+            </div>
+          </Section>
+
+          <Section
+            title="Certifications"
+            hint="Courses and certificates recruiters can verify."
+          >
+            <div className="flex flex-wrap gap-2">
+              {certifications.map((c) => (
+                <span
+                  key={c}
+                  className="inline-flex items-center gap-1 rounded-md bg-soft px-2.5 py-1 text-xs"
+                >
+                  {c}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCertifications(certifications.filter((x) => x !== c))
+                    }
+                    aria-label={`Remove ${c}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input
+                className={inputClass}
+                value={certDraft}
+                onChange={(e) => setCertDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    const name = certDraft.trim();
+                    if (name && !certifications.includes(name)) {
+                      setCertifications([...certifications, name]);
+                    }
+                    setCertDraft("");
+                  }
+                }}
+                placeholder="e.g. AWS Cloud Practitioner"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const name = certDraft.trim();
+                  if (name && !certifications.includes(name)) {
+                    setCertifications([...certifications, name]);
+                  }
+                  setCertDraft("");
+                }}
                 className="shrink-0 rounded-md border border-line px-3 text-sm font-semibold hover:bg-soft"
               >
                 Add

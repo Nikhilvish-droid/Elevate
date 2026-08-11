@@ -1,4 +1,5 @@
 import { api, apiPublic } from "@/lib/api";
+import { clearProfileCache } from "@/lib/profile";
 
 export type JobRow = {
   id: number;
@@ -146,6 +147,7 @@ export type ProfileDraft = {
     institution_name: string;
     degree?: string | null;
     field_of_study?: string | null;
+    start_year?: string | null;
     end_year?: string | null;
   }[];
   experience: {
@@ -154,7 +156,10 @@ export type ProfileDraft = {
     start_date: string;
     end_date?: string | null;
     is_current: boolean;
+    location?: string | null;
+    description?: string | null;
   }[];
+  certifications?: string[];
   resume?: {
     file_name: string;
     file_url: string;
@@ -190,6 +195,7 @@ export function stageLabel(status: string) {
 }
 
 export function computeCompletion(c: CandidateFull) {
+  const skillCount = c.skills.filter((s) => s.category !== "desired_role").length;
   const checks = [
     Boolean(c.profile_image_url),
     Boolean(c.phone),
@@ -197,7 +203,7 @@ export function computeCompletion(c: CandidateFull) {
     Boolean(c.professional_summary),
     c.education.length > 0,
     c.experience.length > 0,
-    c.skills.length > 0,
+    skillCount > 0,
     c.resumes.length > 0,
     Boolean(c.linkedin_url || c.github_url || c.portfolio_url),
   ];
@@ -219,11 +225,7 @@ export async function listPublishedJobs(filters: JobFilters = {}) {
 }
 
 export async function getPublishedJob(id: number) {
-  try {
-    return await api<JobRow>(`/api/jobs/${id}`);
-  } catch {
-    return null;
-  }
+  return api<JobRow>(`/api/jobs/${id}`);
 }
 
 export async function getMyApplicationForJob(jobId: number) {
@@ -303,6 +305,7 @@ export async function saveCandidateProfile(draft: ProfileDraft) {
     method: "PUT",
     body: JSON.stringify(draft),
   });
+  clearProfileCache();
   return { ...data, profile_completion_percentage: computeCompletion(data) };
 }
 

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
-import { usePathname } from "next/navigation";
+import { useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import type { ReactNode } from "react";
 import {
   DashShell,
   IconBrief,
@@ -13,20 +14,22 @@ import {
   IconOffer,
   IconUser,
 } from "@/components/DashShell";
-import { getProfile, homeFor } from "@/lib/profile";
+import { getProfile, isOnboarded } from "@/lib/profile";
 
 export function CandidatePortal({ children }: { children: ReactNode }) {
   const path = usePathname();
-  const [home, setHome] = useState("/candidate");
+  const router = useRouter();
 
   useEffect(() => {
-    getProfile().then((p) => {
-      if (p?.role === "candidate") setHome(homeFor(p));
+    getProfile().then((profile) => {
+      if (!profile || !isOnboarded(profile) || profile.role !== "candidate") {
+        router.replace("/onboarding?hint=candidate");
+      }
     });
-  }, []);
+  }, [router]);
 
   const nav = [
-    { href: home, label: "Home", icon: <IconHome /> },
+    { href: "/candidate", label: "Home", icon: <IconHome /> },
     { href: "/candidate/profile", label: "Profile", icon: <IconUser /> },
     { href: "/candidate/jobs", label: "Jobs", icon: <IconBrief /> },
     { href: "/candidate/applied", label: "Applied", icon: <IconList /> },
@@ -37,8 +40,8 @@ export function CandidatePortal({ children }: { children: ReactNode }) {
   ].map((item) => ({
     ...item,
     active:
-      item.href === home
-        ? path === "/candidate" || path.startsWith("/u/")
+      item.href === "/candidate"
+        ? path === "/candidate"
         : path.startsWith(item.href),
   }));
 

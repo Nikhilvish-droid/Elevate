@@ -139,6 +139,9 @@ async function buildSessionProfile(supabase, user) {
   }
 
   const role = isCandidate ? "candidate" : teamRole ? "company" : null;
+  const onboarding_complete = isCandidate
+    ? Boolean(candidate_id)
+    : Boolean(teamRole);
 
   return {
     id: appUser.id,
@@ -153,7 +156,7 @@ async function buildSessionProfile(supabase, user) {
     headline,
     company_name,
     job_title: teamRole ? teamLabel(teamRole) : null,
-    onboarding_complete: Boolean(role),
+    onboarding_complete,
   };
 }
 

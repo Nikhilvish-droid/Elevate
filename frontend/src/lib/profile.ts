@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { clearTokenCache } from "@/lib/auth/jwt";
 import { createClient } from "@/lib/supabase/client";
 import {
   type AppUser,
@@ -9,8 +10,10 @@ import {
 
 export type { AppUser as Profile, Role, TeamRole } from "@/lib/user";
 export {
+  afterAuthPath,
   candidateIdFromSlug,
   homeFor,
+  isOnboarded,
   profilePath,
   profileSlug,
   teamLabel,
@@ -24,14 +27,44 @@ export async function getSessionUser() {
   return user;
 }
 
+let profileCache: AppUser | null | undefined;
+let profileInflight: Promise<AppUser | null> | null = null;
+
+export function peekProfile() {
+  return profileCache;
+}
+
+export function setProfileCache(profile: AppUser | null) {
+  profileCache = profile ?? undefined;
+}
+
+export function clearProfileCache() {
+  profileCache = undefined;
+  profileInflight = null;
+}
+
 export async function getProfile(): Promise<AppUser | null> {
   const user = await getSessionUser();
   if (!user) return null;
-  return api<AppUser>("/api/me");
+  if (profileCache?.id === user.id) return profileCache;
+  if (profileInflight) return profileInflight;
+
+  profileInflight = api<AppUser>("/api/me")
+    .then((profile) => {
+      profileCache = profile;
+      return profile;
+    })
+    .finally(() => {
+      profileInflight = null;
+    });
+
+  return profileInflight;
 }
 
 export async function syncAuthUser(): Promise<AppUser> {
-  return api<AppUser>("/api/auth/sync", { method: "POST" });
+  const profile = await api<AppUser>("/api/auth/sync", { method: "POST" });
+  setProfileCache(profile);
+  return profile;
 }
 
 export type CandidateOnboardingInput = {
@@ -56,10 +89,12 @@ export type CandidateOnboardingInput = {
 };
 
 export async function saveCandidateOnboarding(input: CandidateOnboardingInput) {
-  return api<AppUser>("/api/onboarding/candidate", {
+  const profile = await api<AppUser>("/api/onboarding/candidate", {
     method: "POST",
     body: JSON.stringify(input),
   });
+  setProfileCache(profile);
+  return profile;
 }
 
 export type CompanyOnboardingInput = {
@@ -77,13 +112,17 @@ export type CompanyOnboardingInput = {
 };
 
 export async function saveCompanyOnboarding(input: CompanyOnboardingInput) {
-  return api<AppUser>("/api/onboarding/company", {
+  const profile = await api<AppUser>("/api/onboarding/company", {
     method: "POST",
     body: JSON.stringify(input),
   });
+  setProfileCache(profile);
+  return profile;
 }
 
 export async function signOut() {
   const supabase = createClient();
   await supabase.auth.signOut();
+  clearProfileCache();
+  clearTokenCache();
 }

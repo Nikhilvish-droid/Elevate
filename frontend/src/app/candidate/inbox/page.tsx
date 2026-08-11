@@ -46,8 +46,14 @@ export default function InboxPage() {
                 }`}
                 onClick={async () => {
                   if (!n.is_read) {
-                    await markNotificationRead(n.id);
-                    await load();
+                    try {
+                      await markNotificationRead(n.id);
+                      await load();
+                    } catch (e) {
+                      setError(
+                        e instanceof Error ? e.message : "Could not mark read.",
+                      );
+                    }
                   }
                 }}
               >

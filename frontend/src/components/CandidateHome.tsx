@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { getProfile, homeFor, type Profile } from "@/lib/profile";
+import { getProfile, profilePath, type Profile } from "@/lib/profile";
 import {
   computeCompletion,
   getCandidateFull,
@@ -70,6 +70,7 @@ export default function CandidateHome() {
   const [tips, setTips] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -79,13 +80,13 @@ export default function CandidateHome() {
         const [cand, jobList, apps, interviews, assessments, offerList, notes, analysis] =
           await Promise.all([
             getCandidateFull(),
-            listPublishedJobs(),
-            listMyApplications(),
-            listMyInterviews(),
-            listMyAssessments(),
-            listMyOffers(),
-            listMyNotifications(),
-            latestResumeScore(),
+            listPublishedJobs().catch(() => []),
+            listMyApplications().catch(() => []),
+            listMyInterviews().catch(() => []),
+            listMyAssessments().catch(() => []),
+            listMyOffers().catch(() => []),
+            listMyNotifications().catch(() => []),
+            latestResumeScore().catch(() => null),
           ]);
         setFull(cand);
         setApplications(apps.slice(0, 4));
@@ -108,21 +109,38 @@ export default function CandidateHome() {
         setScore(analysis?.match_percentage ?? null);
         const rec = analysis?.recommendations;
         setTips(Array.isArray(rec) ? rec.map(String).slice(0, 3) : []);
+        if (!cand) {
+          setError("Finish candidate onboarding to load your full profile.");
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Could not load dashboard.");
+      } finally {
+        setLoaded(true);
       }
     })();
   }, []);
 
   async function copyShareLink() {
-    if (!user) return;
-    const url = `${window.location.origin}${homeFor(user)}`;
-    await navigator.clipboard.writeText(url);
+    if (!user?.candidate_id) {
+      setError("Finish onboarding before sharing your profile.");
+      return;
+    }
+    const url = `${window.location.origin}${profilePath(user)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      window.prompt("Copy your unique profile link", url);
+    }
     setCopied(true);
     window.setTimeout(() => setCopied(false), 2000);
   }
 
-  const name = user?.full_name ?? "Candidate";
+  const name =
+    (full
+      ? [full.first_name, full.last_name].filter(Boolean).join(" ")
+      : "") ||
+    user?.full_name ||
+    "Candidate";
   const location = full?.location ?? user?.location ?? "—";
   const headline = full?.professional_summary ?? user?.headline ?? "Open to roles";
   const completion = full ? computeCompletion(full) : 0;
@@ -136,6 +154,10 @@ export default function CandidateHome() {
       document.title = previous;
     };
   }, [user?.full_name]);
+
+  if (!loaded) {
+    return <p className="text-sm text-muted">Loading your profile…</p>;
+  }
 
   return (
     <div className="mx-auto max-w-4xl">

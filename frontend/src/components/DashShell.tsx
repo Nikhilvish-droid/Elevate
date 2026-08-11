@@ -9,6 +9,8 @@ import {
   getProfile,
   getSessionUser,
   homeFor,
+  isOnboarded,
+  peekProfile,
   signOut,
   teamLabel,
 } from "@/lib/profile";
@@ -40,7 +42,7 @@ export function DashShell({
   children: ReactNode;
 }) {
   const router = useRouter();
-  const [user, setLocal] = useState<Profile | null>(null);
+  const [user, setLocal] = useState<Profile | null>(() => peekProfile() ?? null);
   const [menu, setMenu] = useState(false);
 
   useEffect(() => {
@@ -55,44 +57,21 @@ export function DashShell({
       if (cancelled) return;
 
       if (role === "candidate") {
-        setLocal(
-          profile ?? {
-            id: sessionUser.id,
-            email: sessionUser.email ?? null,
-            full_name: null,
-            phone: null,
-            profile_image_url: null,
-            role: "candidate",
-            team_role: null,
-            company_name: null,
-            job_title: null,
-            headline: null,
-            location: null,
-            onboarding_complete: false,
-          },
-        );
+        if (!profile || !isOnboarded(profile) || profile.role !== "candidate") {
+          router.replace("/onboarding?hint=candidate");
+          return;
+        }
+        setLocal(profile);
         return;
       }
 
-      const team = teamRole ?? profile?.team_role ?? "recruiter";
-      setLocal(
-        profile
-          ? { ...profile, team_role: team }
-          : {
-              id: sessionUser.id,
-              email: sessionUser.email ?? null,
-              full_name: null,
-              phone: null,
-              profile_image_url: null,
-              role: "company",
-              team_role: team,
-              company_name: null,
-              job_title: teamLabel(team),
-              headline: null,
-              location: null,
-              onboarding_complete: false,
-            },
-      );
+      if (!profile || !isOnboarded(profile) || profile.role !== "company") {
+        router.replace("/onboarding?hint=company");
+        return;
+      }
+
+      const team = teamRole ?? profile.team_role ?? "recruiter";
+      setLocal({ ...profile, team_role: team });
     })();
     return () => {
       cancelled = true;
@@ -164,6 +143,7 @@ export function DashShell({
               <Link
                 key={item.label}
                 href={item.href}
+                prefetch
                 className={navClass(item.active)}
               >
                 {item.icon}

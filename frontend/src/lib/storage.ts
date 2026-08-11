@@ -70,15 +70,9 @@ export async function uploadResume(file: File): Promise<UploadedResume> {
   });
   if (error) throw new Error(error.message);
 
-  const { data: signed, error: signError } = await supabase.storage
-    .from("resumes")
-    .createSignedUrl(path, 60 * 60 * 24 * 365);
-
-  if (signError) throw new Error(signError.message);
-
   return {
     file_name: file.name,
-    file_url: signed.signedUrl,
+    file_url: path,
     file_type,
     file_size_bytes: file.size,
   };

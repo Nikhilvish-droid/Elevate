@@ -8,6 +8,7 @@ import {
   formatEmployment,
   formatPay,
   formatWorkMode,
+  getCandidateFull,
   getMyApplicationForJob,
   getPublishedJob,
   type JobRow,
@@ -22,6 +23,7 @@ export default function JobDetailPage() {
   const [cover, setCover] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [hasResume, setHasResume] = useState(true);
 
   useEffect(() => {
     if (!id) return;
@@ -29,8 +31,12 @@ export default function JobDetailPage() {
       try {
         const row = await getPublishedJob(id);
         setJob(row);
-        const app = await getMyApplicationForJob(id);
+        const [app, cand] = await Promise.all([
+          getMyApplicationForJob(id).catch(() => null),
+          getCandidateFull(),
+        ]);
         if (app) setApplied(app.status);
+        if (cand) setHasResume(cand.resumes.length > 0);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Could not load job.");
       }
@@ -39,6 +45,10 @@ export default function JobDetailPage() {
 
   async function onApply(e: FormEvent) {
     e.preventDefault();
+    if (!hasResume) {
+      setError("Upload a resume on your profile before applying.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -58,7 +68,8 @@ export default function JobDetailPage() {
   if (!job) {
     return (
       <p className="text-sm text-muted">
-        Job not found. <Link href="/candidate/jobs" className="text-brand">Back to jobs</Link>
+        {error || "Job not found."}{" "}
+        <Link href="/candidate/jobs" className="text-brand">Back to jobs</Link>
       </p>
     );
   }
@@ -100,6 +111,14 @@ export default function JobDetailPage() {
         </p>
       ) : (
         <form onSubmit={onApply} className="mt-8 space-y-3">
+          {!hasResume ? (
+            <p className="border border-line bg-soft px-4 py-3 text-sm text-muted">
+              Upload a resume first.{" "}
+              <Link href="/candidate/profile" className="font-semibold text-brand">
+                Edit profile
+              </Link>
+            </p>
+          ) : null}
           <label className="block text-sm font-medium">
             Cover letter (optional)
             <textarea
@@ -116,7 +135,7 @@ export default function JobDetailPage() {
           ) : null}
           <button
             type="submit"
-            disabled={busy}
+            disabled={busy || !hasResume}
             className="rounded-md bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-deep disabled:opacity-60"
           >
             {busy ? "Submitting…" : "Apply now"}

@@ -69,32 +69,39 @@ router.put(
 
     const { first_name, last_name } = splitName(draft.full_name);
 
+    const phone =
+      draft.phone === undefined ? undefined : draft.phone?.trim() || null;
+
+    const userPatch = {
+      full_name: draft.full_name.trim(),
+      profile_image_url: draft.profile_image_url || undefined,
+      updated_at: new Date().toISOString(),
+    };
+    if (phone !== undefined) userPatch.phone = phone;
+
     const { error: userErr } = await req.supabase
       .from("users")
-      .update({
-        full_name: draft.full_name.trim(),
-        phone: draft.phone || null,
-        profile_image_url: draft.profile_image_url || undefined,
-        updated_at: new Date().toISOString(),
-      })
+      .update(userPatch)
       .eq("id", req.user.id);
     if (userErr) throw new Error(userErr.message);
 
+    const candPatch = {
+      first_name,
+      last_name,
+      location: draft.location || null,
+      professional_summary: draft.professional_summary || null,
+      total_experience_years: draft.total_experience_years ?? null,
+      portfolio_url: draft.portfolio_url || null,
+      github_url: draft.github_url || null,
+      linkedin_url: draft.linkedin_url || null,
+      profile_image_url: draft.profile_image_url || undefined,
+      updated_at: new Date().toISOString(),
+    };
+    if (phone !== undefined) candPatch.phone = phone;
+
     const { error: candErr } = await req.supabase
       .from("candidates")
-      .update({
-        first_name,
-        last_name,
-        phone: draft.phone || null,
-        location: draft.location || null,
-        professional_summary: draft.professional_summary || null,
-        total_experience_years: draft.total_experience_years ?? null,
-        portfolio_url: draft.portfolio_url || null,
-        github_url: draft.github_url || null,
-        linkedin_url: draft.linkedin_url || null,
-        profile_image_url: draft.profile_image_url || undefined,
-        updated_at: new Date().toISOString(),
-      })
+      .update(candPatch)
       .eq("id", candidateId);
     if (candErr) throw new Error(candErr.message);
 
@@ -106,7 +113,8 @@ router.put(
         institution_name: edu.institution_name.trim(),
         degree: edu.degree || null,
         field_of_study: edu.field_of_study || null,
-        end_date: edu.end_year?.trim() ? `${edu.end_year.trim()}-01-01` : null,
+        start_date: edu.start_year?.trim() ? `${edu.start_year.trim()}-01-01` : edu.start_date || null,
+        end_date: edu.end_year?.trim() ? `${edu.end_year.trim()}-01-01` : edu.end_date || null,
       });
     }
 
@@ -120,7 +128,24 @@ router.put(
         start_date: exp.start_date || new Date().toISOString().slice(0, 10),
         end_date: exp.is_current ? null : exp.end_date || null,
         is_current: Boolean(exp.is_current),
+        location: exp.location || null,
+        description: exp.description?.trim() || null,
       });
+    }
+
+    if (draft.certifications) {
+      await req.supabase
+        .from("candidate_certifications")
+        .delete()
+        .eq("candidate_id", candidateId);
+      for (const name of draft.certifications) {
+        const certification_name = String(name || "").trim();
+        if (!certification_name) continue;
+        await req.supabase.from("candidate_certifications").insert({
+          candidate_id: candidateId,
+          certification_name,
+        });
+      }
     }
 
     await syncSkillNames(req.supabase, candidateId, draft.skills, "skill");

@@ -45,7 +45,7 @@ export function profilePath(
   if (user.candidate_id) {
     return `/u/${profileSlug(user.full_name)}-${user.candidate_id}`;
   }
-  return `/u/${user.id}`;
+  return "/onboarding";
 }
 
 export function candidateIdFromSlug(slug: string) {
@@ -54,13 +54,35 @@ export function candidateIdFromSlug(slug: string) {
   return Number(match[1]);
 }
 
+export function isOnboarded(
+  user: Pick<AppUser, "role" | "team_role" | "candidate_id">,
+) {
+  if (user.role === "candidate") return Boolean(user.candidate_id);
+  if (user.role === "company") return Boolean(user.team_role);
+  return false;
+}
+
+/** App home after a finished onboarding — never the public /u/ profile. */
 export function homeFor(
   user: Pick<AppUser, "role" | "team_role" | "full_name" | "candidate_id" | "id">,
 ) {
-  if (user.role === "candidate") return profilePath(user);
+  if (user.role === "candidate") return "/candidate";
   if (user.team_role === "manager") return "/manager";
   if (user.team_role === "interviewer") return "/interviewer";
-  return "/recruiter";
+  if (user.role === "company") return "/recruiter";
+  return "/onboarding";
+}
+
+/** Login / OAuth landing. Incomplete users always go to onboarding. */
+export function afterAuthPath(
+  user: Pick<AppUser, "role" | "team_role" | "candidate_id">,
+  next?: string | null,
+) {
+  if (!isOnboarded(user)) {
+    if (next && next.startsWith("/onboarding")) return next;
+    return "/onboarding";
+  }
+  return homeFor(user);
 }
 
 export function teamLabel(team?: TeamRole | null) {

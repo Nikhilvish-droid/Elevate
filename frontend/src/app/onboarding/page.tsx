@@ -14,7 +14,9 @@ import {
 import {
   TeamRole,
   getSessionUser,
+  getProfile,
   homeFor,
+  isOnboarded,
   saveCandidateOnboarding,
   saveCompanyOnboarding,
   teamLabel,
@@ -69,8 +71,19 @@ function Onboarding() {
         router.replace("/auth?tab=login");
         return;
       }
+      const profile = await getProfile().catch(() => null);
+      if (profile && isOnboarded(profile)) {
+        router.replace(homeFor(profile));
+        return;
+      }
       if (!cancelled) {
         setEmail(user.email ?? "");
+        const name =
+          user.user_metadata?.full_name ||
+          user.user_metadata?.name ||
+          "";
+        setFullName((prev) => prev || name);
+        setContactName((prev) => prev || name);
         setReady(true);
       }
     })();

@@ -90,6 +90,10 @@ router.post(
       .eq("is_primary", true)
       .maybeSingle();
 
+    if (!resume?.id) {
+      return fail(res, 400, "Upload a resume on your profile before applying.");
+    }
+
     const { error } = await req.supabase.from("applications").insert({
       candidate_id: candidateId,
       job_id: Number(req.params.id),
