@@ -74,6 +74,20 @@ function canManageJobs(membershipRole) {
   return membershipRole === "founder" || membershipRole === "recruiter";
 }
 
+function canHireManage(membershipRole) {
+  return (
+    membershipRole === "founder" || membershipRole === "hiring_manager"
+  );
+}
+
+function canInterview(membershipRole) {
+  return membershipRole === "founder" || membershipRole === "interviewer";
+}
+
+function canRecruiterOps(membershipRole) {
+  return membershipRole === "founder" || membershipRole === "recruiter";
+}
+
 async function requireCompanyMember(supabase, userId) {
   const membership = await getMembership(supabase, userId);
   if (!membership) {
@@ -94,6 +108,36 @@ async function requireJobManager(supabase, userId) {
   return membership;
 }
 
+async function requireRecruiter(supabase, userId) {
+  const membership = await requireCompanyMember(supabase, userId);
+  if (!canRecruiterOps(membership.membership_role)) {
+    const err = new Error("Only founders and recruiters can do this.");
+    err.status = 403;
+    throw err;
+  }
+  return membership;
+}
+
+async function requireHiringManager(supabase, userId) {
+  const membership = await requireCompanyMember(supabase, userId);
+  if (!canHireManage(membership.membership_role)) {
+    const err = new Error("Only founders and hiring managers can do this.");
+    err.status = 403;
+    throw err;
+  }
+  return membership;
+}
+
+async function requireInterviewer(supabase, userId) {
+  const membership = await requireCompanyMember(supabase, userId);
+  if (!canInterview(membership.membership_role)) {
+    const err = new Error("Only founders and interviewers can do this.");
+    err.status = 403;
+    throw err;
+  }
+  return membership;
+}
+
 module.exports = {
   MEMBER_ROLES,
   REQUEST_ROLES,
@@ -103,6 +147,12 @@ module.exports = {
   getPendingJoinRequest,
   assertFounder,
   canManageJobs,
+  canHireManage,
+  canInterview,
+  canRecruiterOps,
   requireCompanyMember,
   requireJobManager,
+  requireRecruiter,
+  requireHiringManager,
+  requireInterviewer,
 };

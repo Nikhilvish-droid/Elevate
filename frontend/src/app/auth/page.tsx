@@ -12,7 +12,7 @@ import {
   btnPrimary,
 } from "@/components/Auth";
 import { createClient } from "@/lib/supabase/client";
-import { getAccessToken } from "@/lib/auth/jwt";
+import { getAccessToken, setTokenCache } from "@/lib/auth/jwt";
 import { afterAuthPath, syncAuthUser } from "@/lib/profile";
 import { apiPublic } from "@/lib/api";
 
@@ -43,16 +43,32 @@ function AuthForm() {
       : "/onboarding";
   }
 
-  async function afterLogin() {
-    const token = await getAccessToken();
+  async function afterLogin(sessionAccessToken?: string | null, expiresAt?: number | null) {
+    if (sessionAccessToken) {
+      setTokenCache(sessionAccessToken, expiresAt);
+    }
+
+    let token = sessionAccessToken || (await getAccessToken());
+    if (!token) {
+      await new Promise((r) => setTimeout(r, 200));
+      token = await getAccessToken();
+    }
     if (!token) {
       setError("Login succeeded but no JWT was issued. Try again.");
       return;
     }
 
-    const profile = await syncAuthUser();
-    router.push(afterAuthPath(profile, onboardingPath()));
-    router.refresh();
+    try {
+      const profile = await syncAuthUser();
+      router.push(afterAuthPath(profile, onboardingPath()));
+      router.refresh();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Signed in, but could not load your profile. Is the backend running on port 5000?",
+      );
+    }
   }
 
   async function onGoogle() {
@@ -100,15 +116,19 @@ function AuthForm() {
 
     try {
       if (isLogin) {
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
+        const { data: signInData, error: signInError } =
+          await supabase.auth.signInWithPassword({
+            email: email.trim(),
+            password,
+          });
         if (signInError) {
           setError(signInError.message);
           return;
         }
-        await afterLogin();
+        await afterLogin(
+          signInData.session?.access_token,
+          signInData.session?.expires_at,
+        );
         return;
       }
 
@@ -156,7 +176,12 @@ function AuthForm() {
         return;
       }
 
-      await afterLogin();
+      await afterLogin(
+        data.session?.access_token,
+        data.session?.expires_at,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setBusy(false);
     }

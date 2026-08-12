@@ -17,11 +17,15 @@ export type JobRow = {
   status: string;
   created_at: string;
   company_id: number;
+  required_skills?: string | null;
+  company_details?: string | null;
   companies: {
     id: number;
     name: string;
     logo_url: string | null;
     industry: string | null;
+    description?: string | null;
+    website_url?: string | null;
   } | null;
 };
 
@@ -43,9 +47,16 @@ export type InterviewRow = {
   meeting_link: string | null;
   location: string | null;
   status: string;
+  application_id?: number;
   applications: {
+    id?: number;
     job_id: number;
-    jobs: { title: string; companies: { name: string } | null } | null;
+    status?: string;
+    jobs: {
+      id?: number;
+      title: string;
+      companies: { name: string; logo_url?: string | null } | null;
+    } | null;
   } | null;
 };
 
@@ -79,6 +90,10 @@ export type NotificationRow = {
   notification_type: string;
   is_read: boolean;
   created_at: string;
+  entity_type?: string | null;
+  entity_id?: number | null;
+  company_name?: string | null;
+  job_title?: string | null;
 };
 
 export type JobFilters = {
@@ -214,8 +229,91 @@ export function formatEmployment(type: string) {
   return type.replace(/_/g, " ");
 }
 
+export function formatPostedAt(iso?: string | null) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const days = Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
+  const absolute = d.toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  if (days <= 0) return `Posted today · ${absolute}`;
+  if (days === 1) return `Posted yesterday · ${absolute}`;
+  if (days < 7) return `Posted ${days} days ago · ${absolute}`;
+  return `Posted ${absolute}`;
+}
+
+export function parseSkillList(value?: string | null) {
+  if (!value) return [];
+  return String(value)
+    .split(/[,|•\n]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 export function stageLabel(status: string) {
-  return status.replace(/_/g, " ");
+  const s = String(status || "").toLowerCase();
+  const map: Record<string, string> = {
+    applied: "Applied",
+    screening: "Resume Screening",
+    resume_screening: "Resume Screening",
+    shortlisted: "Shortlisted",
+    interview: "Technical Interview",
+    interviewing: "Technical Interview",
+    technical_interview: "Technical Interview",
+    hr_interview: "HR Interview",
+    offer: "Offer",
+    hired: "Hired",
+    rejected: "Rejected",
+  };
+  return map[s] || s.replace(/_/g, " ");
+}
+
+export const APPLICATION_PIPELINE = [
+  "applied",
+  "resume_screening",
+  "shortlisted",
+  "technical_interview",
+  "hr_interview",
+  "offer",
+  "hired",
+] as const;
+
+export function normalizeAppStage(status: string) {
+  const s = String(status || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  if (s === "screening") return "resume_screening";
+  if (s === "interview" || s === "interviewing" || s === "technical") {
+    return "technical_interview";
+  }
+  if (s === "hr") return "hr_interview";
+  return s;
+}
+
+export function pipelineIndex(status: string) {
+  const key = normalizeAppStage(status);
+  if (key === "rejected") return -1;
+  const idx = APPLICATION_PIPELINE.indexOf(
+    key as (typeof APPLICATION_PIPELINE)[number],
+  );
+  return idx;
+}
+
+export function roundLabel(type: string) {
+  const t = String(type || "").toLowerCase();
+  const map: Record<string, string> = {
+    screening: "Screening round",
+    technical: "Technical round",
+    hr: "HR round",
+    system_design: "System design round",
+  };
+  return map[t] || `${t.replace(/_/g, " ")} round`;
 }
 
 export function computeCompletion(c: CandidateFull) {
@@ -258,10 +356,28 @@ export async function getMyApplicationForJob(jobId: number) {
   );
 }
 
-export async function applyToJob(jobId: number, coverLetter?: string) {
+export async function applyToJob(
+  jobId: number,
+  input: {
+    fit: string;
+    why: string;
+    resume_id?: number | null;
+    resume?: {
+      file_name: string;
+      file_url: string;
+      file_type: "pdf" | "docx";
+      file_size_bytes: number;
+    } | null;
+  },
+) {
   await api(`/api/jobs/${jobId}/apply`, {
     method: "POST",
-    body: JSON.stringify({ cover_letter: coverLetter || "" }),
+    body: JSON.stringify({
+      fit: input.fit,
+      why: input.why,
+      resume_id: input.resume_id || undefined,
+      resume: input.resume || undefined,
+    }),
   });
 }
 

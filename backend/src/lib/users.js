@@ -31,13 +31,17 @@ async function ensureAppUser(supabase, user, fullName) {
   const name = fullName?.trim() || displayName(user);
 
   if (existing) {
-    await supabase
+    const { error: updateErr } = await supabase
       .from("users")
       .update({
         last_login_at: new Date().toISOString(),
         email: user.email || existing.email,
       })
       .eq("id", user.id);
+    // Don't block login if last_login update is RLS-blocked
+    if (updateErr) {
+      console.warn("users last_login update skipped:", updateErr.message);
+    }
     return existing;
   }
 

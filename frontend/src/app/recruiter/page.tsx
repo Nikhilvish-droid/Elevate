@@ -12,11 +12,16 @@ import {
   IconStar,
   IconUsers,
 } from "@/components/DashShell";
+import { AppsPanel } from "@/components/company/AppsPanel";
 import { CompanyDashboardPanel } from "@/components/company/CompanyDashboard";
 import { HomeCandidatesPanel } from "@/components/company/HomeCandidatesPanel";
+import {
+  EmailPanel,
+  InterviewPanel,
+} from "@/components/company/InterviewEmailPanels";
 import { JobsPanel } from "@/components/company/JobsPanel";
+import { OffersPanel, ShortlistPanel } from "@/components/company/OffersPanel";
 import { ProfilesPanel } from "@/components/company/ProfilesPanel";
-import { applicants } from "@/data/mock";
 import {
   getCompanyTeam,
   getCompanyWorkspace,
@@ -24,6 +29,7 @@ import {
   type CompanyTeam,
   type CompanyWorkspace,
 } from "@/lib/company";
+import { getPresence, setPresence, type PresenceStatus } from "@/lib/presence";
 import { Profile, getProfile } from "@/lib/profile";
 
 type View =
@@ -69,11 +75,11 @@ export default function RecruiterPage() {
   const [user, setLocal] = useState<Profile | null>(null);
   const [workspace, setWorkspace] = useState<CompanyWorkspace | null>(null);
   const [view, setView] = useState<View>("home");
-  const [shortlisted, setShortlisted] = useState<string[]>(["a3", "a4"]);
   const [team, setTeam] = useState<CompanyTeam | null>(null);
   const [teamError, setTeamError] = useState("");
   const [reviewing, setReviewing] = useState<number | null>(null);
   const [openJobCreate, setOpenJobCreate] = useState(false);
+  const [hiringActive, setHiringActive] = useState(true);
 
   const loadTeam = useCallback(async () => {
     try {
@@ -93,20 +99,33 @@ export default function RecruiterPage() {
   }, []);
 
   useEffect(() => {
-    getProfile().then(setLocal);
+    getProfile().then((profile) => {
+      setLocal(profile);
+      if (profile?.id) {
+        setHiringActive(getPresence(profile.id) === "active");
+      }
+    });
     loadTeam();
     loadWorkspace();
   }, [loadTeam, loadWorkspace]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const sync = () => setHiringActive(getPresence(user.id) === "active");
+    window.addEventListener("elevate-presence", sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener("elevate-presence", sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, [user?.id]);
 
   const company =
     workspace?.company.name || user?.company_name || "Your company";
   const name = user?.full_name || workspace?.me.full_name || "Recruiter";
   const title = user?.job_title || "Recruiter";
-  const isFounder =
-    workspace?.is_founder ||
-    user?.membership_role === "founder" ||
-    user?.team_role === "founder";
-  const canManageJobs = workspace?.can_manage_jobs ?? true;
+  const canManageJobs = workspace?.can_manage_jobs ?? false;
+  const isFounder = workspace?.is_founder ?? false;
   const companyDetailsDefault = [
     workspace?.company.name,
     workspace?.company.industry,
@@ -119,20 +138,18 @@ export default function RecruiterPage() {
     { label: "Home", icon: <IconHome />, id: "home" as View },
     { label: "Dashboard", icon: <IconChart />, id: "dashboard" as View },
     { label: "Jobs", icon: <IconBrief />, id: "jobs" as View },
-    { label: "Profiles", icon: <IconUser />, id: "profiles" as View },
     { label: "Apps", icon: <IconList />, id: "apps" as View },
     { label: "Shortlist", icon: <IconStar />, id: "shortlist" as View },
     { label: "Interview", icon: <IconCal />, id: "interviews" as View },
     { label: "Email", icon: <IconMsg />, id: "email" as View },
     { label: "Offers", icon: <IconOffer />, id: "offers" as View },
-    { label: "Team", icon: <IconUsers />, id: "team" as View },
+    ...(isFounder
+      ? [
+          { label: "Profiles", icon: <IconUser />, id: "profiles" as View },
+          { label: "Team", icon: <IconUsers />, id: "team" as View },
+        ]
+      : []),
   ];
-
-  function toggleShortlist(id: string) {
-    setShortlisted((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
-  }
 
   function goPostJob() {
     setOpenJobCreate(true);
@@ -160,6 +177,14 @@ export default function RecruiterPage() {
               title={title}
               logoUrl={workspace?.company.logo_url}
               canPost={canManageJobs}
+              isFounder={isFounder}
+              hiringActive={hiringActive}
+              onToggleHiring={() => {
+                if (!user?.id) return;
+                const next: PresenceStatus = hiringActive ? "away" : "active";
+                setPresence(user.id, next);
+                setHiringActive(next === "active");
+              }}
               onPost={goPostJob}
               onTeam={() => setView("team")}
               onProfiles={() => setView("profiles")}
@@ -191,69 +216,23 @@ export default function RecruiterPage() {
         ) : null}
 
         {view === "apps" ? (
-          <Panel title="Applications" sub="Everyone who applied to your jobs.">
-            <CandidateList
-              rows={applicants}
-              shortlisted={shortlisted}
-              onShortlist={toggleShortlist}
-              onSchedule={() => setView("interviews")}
-              onEmail={() => setView("email")}
-            />
-          </Panel>
+          <AppsPanel
+            onSchedule={() => setView("interviews")}
+            onEmail={() => setView("email")}
+          />
         ) : null}
 
         {view === "shortlist" ? (
-          <Panel title="Shortlist" sub="Candidates ready for hiring manager review.">
-            <CandidateList
-              rows={applicants.filter((a) => shortlisted.includes(a.id))}
-              shortlisted={shortlisted}
-              onShortlist={toggleShortlist}
-              onSchedule={() => setView("interviews")}
-              onEmail={() => setView("email")}
-            />
-          </Panel>
+          <ShortlistPanel
+            onSchedule={() => setView("interviews")}
+            onEmail={() => setView("email")}
+            onOffer={() => setView("offers")}
+          />
         ) : null}
 
-        {view === "interviews" ? (
-          <Panel title="Schedule interviews" sub="Book a round and notify the candidate.">
-            <SimpleForm
-              fields={[
-                {
-                  label: "Candidate",
-                  type: "select",
-                  options: applicants.map((a) => a.name),
-                },
-                { label: "Date & time", type: "datetime" },
-              ]}
-              cta="Schedule"
-            />
-          </Panel>
-        ) : null}
+        {view === "interviews" ? <InterviewPanel /> : null}
 
-        {view === "email" ? (
-          <Panel title="Send email" sub="Message an applicant.">
-            <SimpleForm
-              fields={[
-                {
-                  label: "To",
-                  type: "select",
-                  options: applicants.map((a) => a.name),
-                },
-                {
-                  label: "Subject",
-                  type: "text",
-                  value: "Next steps for your application",
-                },
-                {
-                  label: "Message",
-                  type: "area",
-                  value: "Hi — thanks for applying. We'd like to move forward…",
-                },
-              ]}
-              cta="Send"
-            />
-          </Panel>
-        ) : null}
+        {view === "email" ? <EmailPanel /> : null}
 
         {view === "team" ? (
           <TeamPanel
@@ -278,29 +257,7 @@ export default function RecruiterPage() {
           />
         ) : null}
 
-        {view === "offers" ? (
-          <Panel
-            title="Offer letters"
-            sub={
-              isFounder
-                ? "Generate an offer for a shortlisted candidate."
-                : "Generate an offer. Company settings stay with the founder."
-            }
-          >
-            <SimpleForm
-              fields={[
-                {
-                  label: "Candidate",
-                  type: "select",
-                  options: applicants.map((a) => a.name),
-                },
-                { label: "Role", type: "text", value: "Full Stack Developer" },
-                { label: "CTC", type: "text", value: "₹18L" },
-              ]}
-              cta="Generate offer"
-            />
-          </Panel>
-        ) : null}
+        {view === "offers" ? <OffersPanel isFounder={isFounder} /> : null}
       </div>
     </DashShell>
   );
@@ -312,6 +269,9 @@ function ProfileCard({
   title,
   logoUrl,
   canPost,
+  isFounder,
+  hiringActive,
+  onToggleHiring,
   onPost,
   onTeam,
   onProfiles,
@@ -322,6 +282,9 @@ function ProfileCard({
   title: string;
   logoUrl?: string | null;
   canPost: boolean;
+  isFounder: boolean;
+  hiringActive: boolean;
+  onToggleHiring: () => void;
   onPost: () => void;
   onTeam: () => void;
   onProfiles: () => void;
@@ -360,20 +323,24 @@ function ProfileCard({
           >
             Dashboard
           </button>
-          <button
-            type="button"
-            onClick={onProfiles}
-            className="rounded-md border border-line px-4 py-2 text-sm font-semibold hover:bg-soft"
-          >
-            Profiles
-          </button>
-          <button
-            type="button"
-            onClick={onTeam}
-            className="rounded-md border border-line px-4 py-2 text-sm font-semibold hover:bg-soft"
-          >
-            Team
-          </button>
+          {isFounder ? (
+            <>
+              <button
+                type="button"
+                onClick={onProfiles}
+                className="rounded-md border border-line px-4 py-2 text-sm font-semibold hover:bg-soft"
+              >
+                Profiles
+              </button>
+              <button
+                type="button"
+                onClick={onTeam}
+                className="rounded-md border border-line px-4 py-2 text-sm font-semibold hover:bg-soft"
+              >
+                Team
+              </button>
+            </>
+          ) : null}
           {canPost ? (
             <button
               type="button"
@@ -389,10 +356,15 @@ function ProfileCard({
         <p className="text-sm font-medium">Hiring status</p>
         <button
           type="button"
-          className="mt-2 inline-flex items-center gap-2 rounded-md border border-line px-3 py-2 text-sm"
+          onClick={onToggleHiring}
+          className="mt-2 inline-flex items-center gap-2 rounded-md border border-line px-3 py-2 text-sm hover:bg-soft"
         >
-          <span className="h-2 w-2 rounded-full bg-emerald-500" />
-          Actively hiring
+          <span
+            className={`h-2 w-2 rounded-full ${
+              hiringActive ? "bg-emerald-500" : "bg-amber-500"
+            }`}
+          />
+          {hiringActive ? "Actively hiring" : "Hiring paused"}
         </button>
       </div>
     </section>
@@ -535,155 +507,5 @@ function TeamPanel({
         </div>
       )}
     </section>
-  );
-}
-
-function Panel({
-  title,
-  sub,
-  children,
-}: {
-  title: string;
-  sub: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section>
-      <div className="mb-4">
-        <h2 className="font-display text-xl font-bold">{title}</h2>
-        <p className="mt-1 text-sm text-muted">{sub}</p>
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function SimpleForm({
-  fields,
-  cta,
-}: {
-  fields: {
-    label: string;
-    type: "text" | "area" | "select" | "datetime";
-    options?: string[];
-    value?: string;
-  }[];
-  cta: string;
-}) {
-  return (
-    <div className="border border-line bg-elevated px-5 py-6">
-      {fields.map((f) => (
-        <label key={f.label} className="mt-4 block text-sm font-medium first:mt-0">
-          {f.label}
-          {f.type === "select" ? (
-            <select className="mt-1.5 w-full rounded-md border border-line bg-surface px-3 py-2.5 text-sm">
-              {f.options?.map((o) => (
-                <option key={o}>{o}</option>
-              ))}
-            </select>
-          ) : null}
-          {f.type === "text" ? (
-            <input
-              className="mt-1.5 w-full rounded-md border border-line bg-surface px-3 py-2.5 text-sm"
-              defaultValue={f.value}
-            />
-          ) : null}
-          {f.type === "datetime" ? (
-            <input
-              type="datetime-local"
-              className="mt-1.5 w-full rounded-md border border-line bg-surface px-3 py-2.5 text-sm"
-            />
-          ) : null}
-          {f.type === "area" ? (
-            <textarea
-              rows={5}
-              className="mt-1.5 w-full rounded-md border border-line bg-surface px-3 py-2.5 text-sm"
-              defaultValue={f.value}
-            />
-          ) : null}
-        </label>
-      ))}
-      <button
-        type="button"
-        className="mt-5 rounded-md bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-deep"
-      >
-        {cta}
-      </button>
-    </div>
-  );
-}
-
-function CandidateList({
-  rows,
-  shortlisted,
-  onShortlist,
-  onSchedule,
-  onEmail,
-}: {
-  rows: typeof applicants;
-  shortlisted: string[];
-  onShortlist: (id: string) => void;
-  onSchedule: () => void;
-  onEmail: () => void;
-}) {
-  if (rows.length === 0) {
-    return (
-      <p className="border border-line bg-elevated px-5 py-10 text-center text-sm text-muted">
-        No candidates here yet.
-      </p>
-    );
-  }
-
-  return (
-    <ul className="divide-y divide-line border border-line bg-elevated">
-      {rows.map((person) => (
-        <li
-          key={person.id}
-          className="flex flex-wrap items-start justify-between gap-4 px-5 py-5"
-        >
-          <div className="flex gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-soft text-sm font-bold text-brand">
-              {person.name.slice(0, 1)}
-            </div>
-            <div>
-              <p className="font-semibold">{person.name}</p>
-              <p className="text-sm text-muted">
-                {person.role} · {person.job}
-              </p>
-              <p className="mt-1 text-sm text-muted">{person.location}</p>
-              <p className="mt-1 text-xs text-muted">
-                {person.stage} · Applied {person.applied}
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => onShortlist(person.id)}
-                  className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold hover:bg-soft"
-                >
-                  {shortlisted.includes(person.id) ? "Shortlisted" : "Shortlist"}
-                </button>
-                <button
-                  type="button"
-                  onClick={onSchedule}
-                  className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold hover:bg-soft"
-                >
-                  Interview
-                </button>
-                <button
-                  type="button"
-                  onClick={onEmail}
-                  className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold hover:bg-soft"
-                >
-                  Email
-                </button>
-              </div>
-            </div>
-          </div>
-          <span className="text-sm font-semibold text-brand">
-            {person.match}% match
-          </span>
-        </li>
-      ))}
-    </ul>
   );
 }

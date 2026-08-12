@@ -71,17 +71,17 @@ const JOIN_ROLES: { id: Exclude<TeamRole, "founder">; title: string; body: strin
     {
       id: "recruiter",
       title: "Recruiter",
-      body: "Post jobs, view apps, shortlist, schedule, email, offers.",
+      body: "Can: post jobs, move stages, shortlist, schedule interviewers, email, send offers after HM approval. Cannot: edit company profile or approve join requests (founder only).",
     },
     {
       id: "manager",
       title: "Hiring manager",
-      body: "Review shortlist, approve hires, feedback, analytics.",
+      body: "Can: review shortlist, compare interview feedback, approve/reject hires, view analytics. Cannot: post jobs, schedule interviews, or change company settings.",
     },
     {
       id: "interviewer",
       title: "Interviewer",
-      body: "Join assigned rounds and leave structured feedback.",
+      body: "Can: join assigned rounds and submit structured feedback. Cannot: see salary, shortlist, post jobs, or send offers.",
     },
   ];
 

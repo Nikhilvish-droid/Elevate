@@ -5,8 +5,10 @@ import { FormEvent, useEffect, useState } from "react";
 import {
   formatEmployment,
   formatPay,
+  formatPostedAt,
   formatWorkMode,
   listPublishedJobs,
+  parseSkillList,
   type JobRow,
 } from "@/lib/candidate";
 
@@ -110,26 +112,53 @@ export default function JobsPage() {
             recruiter publishes a job.
           </li>
         ) : (
-          jobs.map((job) => (
-            <li key={job.id}>
-              <Link
-                href={`/candidate/jobs/${job.id}`}
-                className="flex flex-wrap items-start justify-between gap-4 px-5 py-5 hover:bg-soft"
-              >
-                <div>
-                  <p className="font-semibold">{job.title}</p>
-                  <p className="text-sm text-muted">
-                    {job.companies?.name ?? "Company"} · {job.location ?? "—"} ·{" "}
-                    {formatWorkMode(job.work_mode)} · {formatEmployment(job.employment_type)}
-                  </p>
-                  <p className="mt-1 text-sm text-muted">
-                    {formatPay(job.salary_min, job.salary_max)}
-                  </p>
-                </div>
-                <span className="text-xs font-semibold text-brand">Apply →</span>
-              </Link>
-            </li>
-          ))
+          jobs.map((job) => {
+            const skills = parseSkillList(job.required_skills).slice(0, 5);
+            const posted = formatPostedAt(job.created_at);
+            return (
+              <li key={job.id}>
+                <Link
+                  href={`/candidate/jobs/${job.id}`}
+                  className="flex flex-wrap items-start justify-between gap-4 px-5 py-5 hover:bg-soft"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold">{job.title}</p>
+                    <p className="text-sm text-muted">
+                      {job.companies?.name ?? "Company"}
+                      {job.companies?.industry ? ` · ${job.companies.industry}` : ""}
+                      {" · "}
+                      {job.location ?? "—"} · {formatWorkMode(job.work_mode)} ·{" "}
+                      {formatEmployment(job.employment_type)}
+                    </p>
+                    <p className="mt-1 text-sm text-muted">
+                      {formatPay(job.salary_min, job.salary_max)}
+                      {job.experience_min_years != null
+                        ? ` · ${job.experience_min_years}${
+                            job.experience_max_years != null
+                              ? `–${job.experience_max_years}`
+                              : "+"
+                          } yrs exp`
+                        : ""}
+                    </p>
+                    {skills.length ? (
+                      <p className="mt-2 text-sm text-muted">
+                        Skills: {skills.join(" · ")}
+                        {parseSkillList(job.required_skills).length > 5
+                          ? "…"
+                          : ""}
+                      </p>
+                    ) : null}
+                    {posted ? (
+                      <p className="mt-1 text-xs text-muted">{posted}</p>
+                    ) : null}
+                  </div>
+                  <span className="shrink-0 text-xs font-semibold text-brand">
+                    Apply →
+                  </span>
+                </Link>
+              </li>
+            );
+          })
         )}
       </ul>
     </div>

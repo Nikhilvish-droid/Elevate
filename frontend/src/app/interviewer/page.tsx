@@ -1,32 +1,126 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import {
   DashShell,
   IconCal,
   IconHome,
   IconMsg,
 } from "@/components/DashShell";
-import { interviews } from "@/data/mock";
+import {
+  listAssignedInterviews,
+  submitInterviewFeedback,
+  type AssignedInterview,
+} from "@/lib/companyJobs";
+import { getCompanyWorkspace } from "@/lib/company";
 import { Profile, getProfile } from "@/lib/profile";
 
 type View = "home" | "rounds" | "feedback";
 
+const SCORE_FIELDS = [
+  { key: "technical", label: "Technical" },
+  { key: "communication", label: "Communication" },
+  { key: "problem_solving", label: "Problem solving" },
+  { key: "teamwork", label: "Teamwork" },
+  { key: "leadership", label: "Leadership" },
+  { key: "overall", label: "Overall" },
+] as const;
+
+type ScoreKey = (typeof SCORE_FIELDS)[number]["key"];
+
+function roundLabel(type: string) {
+  const t = String(type || "").toLowerCase();
+  const map: Record<string, string> = {
+    screening: "Screening",
+    technical: "Technical",
+    hr: "HR",
+    system_design: "System design",
+  };
+  return map[t] || t.replace(/_/g, " ");
+}
+
+function whenLabel(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString("en-IN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
 export default function InterviewerPage() {
   const [user, setLocal] = useState<Profile | null>(null);
+  const [companyName, setCompanyName] = useState("Your company");
   const [view, setView] = useState<View>("home");
-  const [activeId, setActiveId] = useState(interviews[0]?.id ?? "");
-  const [rating, setRating] = useState("4");
-  const [feedback, setFeedback] = useState("");
-  const [saved, setSaved] = useState("");
+  const [rows, setRows] = useState<AssignedInterview[]>([]);
+  const [activeId, setActiveId] = useState<number | null>(null);
+  const [scores, setScores] = useState<Record<ScoreKey, string>>({
+    technical: "4",
+    communication: "4",
+    problem_solving: "4",
+    teamwork: "4",
+    leadership: "4",
+    overall: "4",
+  });
+  const [comments, setComments] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      setError("");
+      const list = await listAssignedInterviews();
+      setRows(list);
+      setActiveId((prev) => {
+        if (prev && list.some((r) => r.id === prev)) return prev;
+        return list[0]?.id ?? null;
+      });
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not load assigned interviews.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     getProfile().then(setLocal);
-  }, []);
+    getCompanyWorkspace()
+      .then((ws) => setCompanyName(ws.company.name || "Your company"))
+      .catch(() => {});
+    load();
+  }, [load]);
 
-  const company = user?.company_name ?? "Your company";
   const name = user?.full_name ?? "Interviewer";
-  const active = interviews.find((i) => i.id === activeId) ?? interviews[0];
+  const active = rows.find((r) => r.id === activeId) ?? null;
+
+  useEffect(() => {
+    if (!active?.feedback) {
+      setScores({
+        technical: "4",
+        communication: "4",
+        problem_solving: "4",
+        teamwork: "4",
+        leadership: "4",
+        overall: "4",
+      });
+      setComments("");
+      return;
+    }
+    const f = active.feedback;
+    setScores({
+      technical: String(f.technical ?? 4),
+      communication: String(f.communication ?? 4),
+      problem_solving: String(f.problem_solving ?? 4),
+      teamwork: String(f.teamwork ?? 4),
+      leadership: String(f.leadership ?? 4),
+      overall: String(f.overall ?? 4),
+    });
+    setComments(f.comments || "");
+  }, [active]);
 
   const nav = [
     { label: "Home", icon: <IconHome />, id: "home" as View },
@@ -34,9 +128,37 @@ export default function InterviewerPage() {
     { label: "Feedback", icon: <IconMsg />, id: "feedback" as View },
   ];
 
-  function submitFeedback() {
-    setSaved(`Feedback saved for ${active?.candidate}.`);
-    setFeedback("");
+  function openFeedback(id: number) {
+    setActiveId(id);
+    setView("feedback");
+  }
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!activeId) {
+      setError("Pick an interview.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await submitInterviewFeedback(activeId, {
+        technical: Number(scores.technical),
+        communication: Number(scores.communication),
+        problem_solving: Number(scores.problem_solving),
+        teamwork: Number(scores.teamwork),
+        leadership: Number(scores.leadership),
+        overall: Number(scores.overall),
+        comments: comments.trim(),
+      });
+      setMessage("Feedback submitted for the hiring manager.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save feedback.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -52,14 +174,18 @@ export default function InterviewerPage() {
       }))}
     >
       <div className="mx-auto max-w-3xl">
+        {error ? (
+          <p className="mb-4 text-sm text-red-600" role="alert">
+            {error}
+          </p>
+        ) : null}
+        {message ? <p className="mb-4 text-sm text-brand">{message}</p> : null}
+
         {view === "home" ? (
           <>
-            <div className="mb-4 h-1 overflow-hidden rounded-full bg-line">
-              <div className="h-full w-[40%] bg-brand" />
-            </div>
             <div className="mb-6 border border-line bg-elevated px-4 py-3 text-sm text-muted">
               Interviewers run assigned rounds and leave feedback — no job
-              posting, shortlisting, or offers.
+              posting, shortlisting, offers, or salary details.
             </div>
 
             <section className="border border-line bg-elevated px-5 py-6 sm:px-7">
@@ -72,7 +198,7 @@ export default function InterviewerPage() {
                     {name}
                   </h1>
                   <p className="mt-0.5 text-sm text-muted">
-                    Interviewer · {company}
+                    Interviewer · {companyName}
                   </p>
                 </div>
               </div>
@@ -86,10 +212,9 @@ export default function InterviewerPage() {
                 </p>
               </div>
               <InterviewList
-                onOpen={(id) => {
-                  setActiveId(id);
-                  setView("feedback");
-                }}
+                rows={rows}
+                loading={loading}
+                onOpen={openFeedback}
               />
             </section>
           </>
@@ -102,10 +227,9 @@ export default function InterviewerPage() {
               Join the scheduled interview when it&apos;s time.
             </p>
             <InterviewList
-              onOpen={(id) => {
-                setActiveId(id);
-                setView("feedback");
-              }}
+              rows={rows}
+              loading={loading}
+              onOpen={openFeedback}
             />
           </section>
         ) : null}
@@ -114,63 +238,135 @@ export default function InterviewerPage() {
           <section>
             <h2 className="font-display text-xl font-bold">Leave feedback</h2>
             <p className="mt-1 mb-4 text-sm text-muted">
-              Structured notes for the hiring manager.
+              Structured scores for the hiring manager. Compensation is never
+              shown here.
             </p>
-            <div className="border border-line bg-elevated px-5 py-6">
-              <label className="block text-sm font-medium">
-                Interview
-                <select
-                  className="mt-1.5 w-full rounded-md border border-line bg-surface px-3 py-2.5 text-sm"
-                  value={activeId}
-                  onChange={(e) => setActiveId(e.target.value)}
-                >
-                  {interviews.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.candidate} · {i.round}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {active ? (
-                <p className="mt-2 text-sm text-muted">
-                  {active.job} · {active.when} · {active.status}
-                </p>
-              ) : null}
-              <label className="mt-4 block text-sm font-medium">
-                Score (1–5)
-                <select
-                  className="mt-1.5 w-full rounded-md border border-line bg-surface px-3 py-2.5 text-sm"
-                  value={rating}
-                  onChange={(e) => setRating(e.target.value)}
-                >
-                  {["1", "2", "3", "4", "5"].map((n) => (
-                    <option key={n}>{n}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="mt-4 block text-sm font-medium">
-                Feedback
-                <textarea
-                  rows={5}
-                  className="mt-1.5 w-full rounded-md border border-line bg-surface px-3 py-2.5 text-sm"
-                  placeholder="What went well? Any concerns?"
-                  value={feedback}
-                  onChange={(e) => setFeedback(e.target.value)}
-                />
-              </label>
-              <button
-                type="button"
-                onClick={submitFeedback}
-                className="mt-5 rounded-md bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-deep"
+            {loading ? (
+              <p className="border border-line bg-elevated px-5 py-10 text-center text-sm text-muted">
+                Loading…
+              </p>
+            ) : rows.length === 0 ? (
+              <p className="border border-line bg-elevated px-5 py-10 text-center text-sm text-muted">
+                No assigned interviews yet.
+              </p>
+            ) : (
+              <form
+                onSubmit={onSubmit}
+                className="border border-line bg-elevated px-5 py-6"
               >
-                Submit feedback
-              </button>
-              {saved ? (
-                <p className="mt-3 text-sm text-brand" role="status">
-                  {saved}
-                </p>
-              ) : null}
-            </div>
+                <label className="block text-sm font-medium">
+                  Interview
+                  <select
+                    className="mt-1.5 w-full rounded-md border border-line bg-surface px-3 py-2.5 text-sm"
+                    value={activeId ?? ""}
+                    onChange={(e) => setActiveId(Number(e.target.value))}
+                  >
+                    {rows.map((i) => (
+                      <option key={i.id} value={i.id}>
+                        {i.candidate_name} · {roundLabel(i.interview_type)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {active ? (
+                  <div className="mt-3 space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm text-muted">
+                        {active.job_title} · {whenLabel(active.scheduled_at)}
+                        {active.candidate_location
+                          ? ` · ${active.candidate_location}`
+                          : ""}
+                      </p>
+                      {active.meeting_link ? (
+                        <a
+                          href={active.meeting_link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold hover:bg-soft"
+                        >
+                          Join meeting
+                        </a>
+                      ) : null}
+                    </div>
+                    {active.match_summary?.recommendation ? (
+                      <p className="text-sm text-muted">
+                        AI note: {active.match_summary.recommendation}
+                        {active.match_summary.match_percentage != null
+                          ? ` (${active.match_summary.match_percentage}% match)`
+                          : ""}
+                      </p>
+                    ) : null}
+                    {active.screening_questions ? (
+                      <div className="border border-line bg-surface px-4 py-3 text-sm">
+                        <p className="font-semibold">Question bank</p>
+                        {(
+                          [
+                            ["Easy", active.screening_questions.easy],
+                            ["Medium", active.screening_questions.medium],
+                            ["Hard", active.screening_questions.hard],
+                          ] as const
+                        ).map(([label, list]) =>
+                          list?.length ? (
+                            <div key={label} className="mt-3">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+                                {label}
+                              </p>
+                              <ul className="mt-1 list-disc space-y-1 pl-5 text-muted">
+                                {list.slice(0, 5).map((q) => (
+                                  <li key={q}>{q}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null,
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  {SCORE_FIELDS.map((field) => (
+                    <label key={field.key} className="block text-sm font-medium">
+                      {field.label} (1–5)
+                      <select
+                        className="mt-1.5 w-full rounded-md border border-line bg-surface px-3 py-2.5 text-sm"
+                        value={scores[field.key]}
+                        onChange={(e) =>
+                          setScores((prev) => ({
+                            ...prev,
+                            [field.key]: e.target.value,
+                          }))
+                        }
+                      >
+                        {["1", "2", "3", "4", "5"].map((n) => (
+                          <option key={n} value={n}>
+                            {n}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+
+                <label className="mt-4 block text-sm font-medium">
+                  Comments
+                  <textarea
+                    rows={5}
+                    className="mt-1.5 w-full rounded-md border border-line bg-surface px-3 py-2.5 text-sm"
+                    placeholder="What went well? Any concerns?"
+                    value={comments}
+                    onChange={(e) => setComments(e.target.value)}
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="mt-5 rounded-md bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-deep disabled:opacity-60"
+                >
+                  {busy ? "Saving…" : "Submit feedback"}
+                </button>
+              </form>
+            )}
           </section>
         ) : null}
       </div>
@@ -178,44 +374,92 @@ export default function InterviewerPage() {
   );
 }
 
-function InterviewList({ onOpen }: { onOpen: (id: string) => void }) {
+function InterviewList({
+  rows,
+  loading,
+  onOpen,
+}: {
+  rows: AssignedInterview[];
+  loading: boolean;
+  onOpen: (id: number) => void;
+}) {
+  if (loading) {
+    return (
+      <p className="border border-line bg-elevated px-5 py-10 text-center text-sm text-muted">
+        Loading interviews…
+      </p>
+    );
+  }
+
+  if (rows.length === 0) {
+    return (
+      <p className="border border-line bg-elevated px-5 py-10 text-center text-sm text-muted">
+        No assigned interviews yet. Recruiters will schedule you onto rounds.
+      </p>
+    );
+  }
+
   return (
     <ul className="divide-y divide-line border border-line bg-elevated">
-      {interviews.map((item) => (
-        <li
-          key={item.id}
-          className="flex flex-wrap items-start justify-between gap-4 px-5 py-5"
-        >
-          <div className="flex gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-soft text-sm font-bold text-brand">
-              {item.candidate.slice(0, 1)}
-            </div>
-            <div>
-              <p className="font-semibold">{item.candidate}</p>
-              <p className="text-sm text-muted">
-                {item.round} · {item.job}
-              </p>
-              <p className="mt-1 text-sm text-muted">{item.when}</p>
-              <button
-                type="button"
-                onClick={() => onOpen(item.id)}
-                className="mt-2 rounded-md border border-line px-2.5 py-1 text-xs font-semibold hover:bg-soft"
-              >
-                {item.status === "Needs feedback"
-                  ? "Add feedback"
-                  : "Open feedback"}
-              </button>
-            </div>
-          </div>
-          <span
-            className={`text-xs font-semibold ${
-              item.status === "Needs feedback" ? "text-amber-700" : "text-brand"
-            }`}
+      {rows.map((item) => {
+        const needsFeedback = !item.feedback?.submitted_at;
+        return (
+          <li
+            key={item.id}
+            className="flex flex-wrap items-start justify-between gap-4 px-5 py-5"
           >
-            {item.status}
-          </span>
-        </li>
-      ))}
+            <div className="flex gap-3">
+              {item.profile_image_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={item.profile_image_url}
+                  alt=""
+                  className="h-11 w-11 rounded-full object-cover"
+                />
+              ) : (
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-soft text-sm font-bold text-brand">
+                  {item.candidate_name.slice(0, 1)}
+                </div>
+              )}
+              <div>
+                <p className="font-semibold">{item.candidate_name}</p>
+                <p className="text-sm text-muted">
+                  {roundLabel(item.interview_type)} · {item.job_title}
+                </p>
+                <p className="mt-1 text-sm text-muted">
+                  {whenLabel(item.scheduled_at)}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {item.meeting_link ? (
+                    <a
+                      href={item.meeting_link}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold hover:bg-soft"
+                    >
+                      Join meeting
+                    </a>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => onOpen(item.id)}
+                    className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold hover:bg-soft"
+                  >
+                    {needsFeedback ? "Add feedback" : "View feedback"}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <span
+              className={`text-xs font-semibold ${
+                needsFeedback ? "text-amber-700" : "text-brand"
+              }`}
+            >
+              {needsFeedback ? "Needs feedback" : "Feedback sent"}
+            </span>
+          </li>
+        );
+      })}
     </ul>
   );
 }

@@ -15,6 +15,12 @@ import {
   deleteAccount,
   teamLabel,
 } from "@/lib/profile";
+import {
+  getPresence,
+  presenceLabel,
+  setPresence,
+  type PresenceStatus,
+} from "@/lib/presence";
 import { ThemeToggle } from "@/lib/theme";
 
 type NavItem = {
@@ -39,6 +45,8 @@ export function DashShell({
   const router = useRouter();
   const [user, setLocal] = useState<Profile | null>(() => peekProfile() ?? null);
   const [menu, setMenu] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [presence, setPresenceState] = useState<PresenceStatus>("active");
   const [deleteBusy, setDeleteBusy] = useState(false);
 
   useEffect(() => {
@@ -75,6 +83,8 @@ export function DashShell({
         const allowed =
           (teamRole === "recruiter" &&
             (actual === "recruiter" || actual === "founder")) ||
+          (teamRole === "manager" &&
+            (actual === "manager" || actual === "founder")) ||
           actual === teamRole;
         if (!allowed) {
           router.replace(homeFor(profile));
@@ -97,6 +107,18 @@ export function DashShell({
       document.title = previous;
     };
   }, [role, user?.full_name]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const sync = () => setPresenceState(getPresence(user.id));
+    sync();
+    window.addEventListener("elevate-presence", sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener("elevate-presence", sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, [user?.id]);
 
   async function logout() {
     await signOut();
@@ -185,16 +207,66 @@ export function DashShell({
           <p className="truncate text-sm font-semibold">{badge}</p>
           <div className="relative flex items-center gap-3">
             <ThemeToggle className="rounded-md border border-line px-2.5 py-1.5 text-xs font-semibold text-muted hover:bg-soft hover:text-ink" />
+            <div className="relative hidden sm:block">
+              <button
+                type="button"
+                onClick={() => {
+                  setMenu(false);
+                  setStatusOpen((v) => !v);
+                }}
+                className="inline-flex items-center rounded-md border border-line px-3 py-1.5 text-xs font-semibold hover:bg-soft"
+                aria-expanded={statusOpen}
+                aria-haspopup="menu"
+              >
+                <span
+                  className={`mr-1.5 inline-block h-1.5 w-1.5 rounded-full ${
+                    presence === "active" ? "bg-emerald-500" : "bg-amber-500"
+                  }`}
+                />
+                {presenceLabel(role, presence)}
+              </button>
+              {statusOpen ? (
+                <div
+                  role="menu"
+                  className="absolute right-0 top-10 z-20 w-48 border border-line bg-elevated py-1 shadow-sm"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      if (!user?.id) return;
+                      setPresence(user.id, "active");
+                      setPresenceState("active");
+                      setStatusOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold hover:bg-soft"
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    {role === "candidate" ? "Ready to interview" : "Active"}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      if (!user?.id) return;
+                      setPresence(user.id, "away");
+                      setPresenceState("away");
+                      setStatusOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold hover:bg-soft"
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                    {role === "candidate" ? "Away" : "Paused"}
+                  </button>
+                </div>
+              ) : null}
+            </div>
             <button
               type="button"
-              className="hidden rounded-md border border-line px-3 py-1.5 text-xs font-semibold sm:inline-flex"
-            >
-              <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              {role === "candidate" ? "Ready to interview" : "Active"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setMenu((v) => !v)}
+              onClick={() => {
+                setStatusOpen(false);
+                setMenu((v) => !v);
+              }}
               className="flex items-center gap-2 rounded-md px-1 py-1 hover:bg-soft"
             >
               {user.profile_image_url ? (

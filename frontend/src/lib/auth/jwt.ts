@@ -13,6 +13,14 @@ export function clearTokenCache() {
   tokenCache = null;
 }
 
+export function setTokenCache(access_token: string, expires_at?: number | null) {
+  const now = Math.floor(Date.now() / 1000);
+  tokenCache = {
+    access_token,
+    expires_at: expires_at ?? now + 3500,
+  };
+}
+
 /** Supabase issues a JWT as `access_token` on login. */
 export async function getAccessToken(): Promise<string | null> {
   const now = Math.floor(Date.now() / 1000);

@@ -174,12 +174,19 @@ router.get(
     const { data, error } = await req.supabase
       .from("interviews")
       .select(
-        "id, interview_type, scheduled_at, duration_minutes, meeting_link, location, status, applications(job_id, jobs(title, companies(name)))",
+        "id, interview_type, scheduled_at, duration_minutes, meeting_link, location, status, application_id, applications(id, job_id, status, jobs(id, title, companies(name, logo_url)))",
       )
       .in("application_id", ids)
       .order("scheduled_at", { ascending: true });
     if (error) throw new Error(error.message);
-    res.json(data || []);
+    res.json(
+      (data || []).map((row) => ({
+        ...row,
+        applications: Array.isArray(row.applications)
+          ? row.applications[0] ?? null
+          : row.applications,
+      })),
+    );
   }),
 );
 
@@ -227,15 +234,42 @@ router.patch(
       return fail(res, 404, "Finish candidate onboarding first.");
     }
     const accept = Boolean(req.body?.accept);
+    const offerId = Number(req.params.id);
+    if (!Number.isFinite(offerId)) return fail(res, 400, "Invalid offer id.");
+
+    const { data: offer, error: findErr } = await req.supabase
+      .from("offer_letters")
+      .select("id, candidate_id, job_id, status")
+      .eq("id", offerId)
+      .eq("candidate_id", candidateId)
+      .maybeSingle();
+    if (findErr) throw new Error(findErr.message);
+    if (!offer) return fail(res, 404, "Offer not found.");
+
     const { error } = await req.supabase
       .from("offer_letters")
       .update({
         status: accept ? "accepted" : "rejected",
         responded_at: new Date().toISOString(),
       })
-      .eq("id", req.params.id)
+      .eq("id", offerId)
       .eq("candidate_id", candidateId);
     if (error) throw new Error(error.message);
+
+    if (accept) {
+      await req.supabase
+        .from("applications")
+        .update({ status: "hired" })
+        .eq("candidate_id", candidateId)
+        .eq("job_id", offer.job_id);
+    } else {
+      await req.supabase
+        .from("applications")
+        .update({ status: "rejected", approved_for_offer: false })
+        .eq("candidate_id", candidateId)
+        .eq("job_id", offer.job_id);
+    }
+
     res.json({ ok: true });
   }),
 );
@@ -245,12 +279,89 @@ router.get(
   asyncHandler(async (req, res) => {
     const { data, error } = await req.supabase
       .from("notifications")
-      .select("id, title, message, notification_type, is_read, created_at")
+      .select(
+        "id, title, message, notification_type, is_read, created_at, entity_type, entity_id",
+      )
       .eq("user_id", req.user.id)
       .order("created_at", { ascending: false })
       .limit(30);
     if (error) throw new Error(error.message);
-    res.json(data || []);
+
+    const rows = data || [];
+    const appIds = rows
+      .filter((n) => n.entity_type === "application" && n.entity_id)
+      .map((n) => n.entity_id);
+    const offerIds = rows
+      .filter((n) => n.entity_type === "offer" && n.entity_id)
+      .map((n) => n.entity_id);
+    const interviewIds = rows
+      .filter((n) => n.entity_type === "interview" && n.entity_id)
+      .map((n) => n.entity_id);
+
+    const metaByKey = {};
+
+    if (appIds.length) {
+      const { data: apps } = await req.supabase
+        .from("applications")
+        .select("id, jobs(title, companies(name))")
+        .in("id", appIds);
+      for (const app of apps || []) {
+        const job = unwrap(app.jobs);
+        const company = unwrap(job?.companies);
+        metaByKey[`application:${app.id}`] = {
+          company_name: company?.name || null,
+          job_title: job?.title || null,
+        };
+      }
+    }
+
+    if (offerIds.length) {
+      const { data: offers } = await req.supabase
+        .from("offer_letters")
+        .select("id, jobs(title, companies(name))")
+        .in("id", offerIds);
+      for (const offer of offers || []) {
+        const job = unwrap(offer.jobs);
+        const company = unwrap(job?.companies);
+        metaByKey[`offer:${offer.id}`] = {
+          company_name: company?.name || null,
+          job_title: job?.title || null,
+        };
+      }
+    }
+
+    if (interviewIds.length) {
+      const { data: ints } = await req.supabase
+        .from("interviews")
+        .select(
+          "id, applications(jobs(title, companies(name)))",
+        )
+        .in("id", interviewIds);
+      for (const row of ints || []) {
+        const app = unwrap(row.applications);
+        const job = unwrap(app?.jobs);
+        const company = unwrap(job?.companies);
+        metaByKey[`interview:${row.id}`] = {
+          company_name: company?.name || null,
+          job_title: job?.title || null,
+        };
+      }
+    }
+
+    res.json(
+      rows.map((n) => {
+        const key =
+          n.entity_type && n.entity_id
+            ? `${n.entity_type}:${n.entity_id}`
+            : null;
+        const meta = (key && metaByKey[key]) || {};
+        return {
+          ...n,
+          company_name: meta.company_name || null,
+          job_title: meta.job_title || null,
+        };
+      }),
+    );
   }),
 );
 

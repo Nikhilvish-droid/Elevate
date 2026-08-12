@@ -3,8 +3,19 @@ const { buildSessionProfile } = require("../lib/users");
 const {
   requireCompanyMember,
   requireJobManager,
+  requireRecruiter,
+  requireHiringManager,
+  requireInterviewer,
 } = require("../lib/company");
 const { JOB_SELECT, JOB_SELECT_BASIC, mapJob, parseJobBody } = require("../lib/companyJobs");
+const {
+  isAllowedStage,
+  normalizeStage,
+  roundToAppStatus,
+  stageLabel: appStageLabel,
+  canViewHiringPipeline,
+} = require("../lib/applicationStages");
+const { screenApplication } = require("../lib/resumeScreener/screenApplication");
 
 const COMPANY_SELECT =
   "id, name, website_url, industry, company_size, description, linkedin_url, twitter_url, github_url, logo_url, created_at";
@@ -445,6 +456,397 @@ function mountCompanyHiringRoutes(admin) {
     }),
   );
 
+  admin.get(
+    "/jobs/:id/applicants",
+    asyncHandler(async (req, res) => {
+      const membership = await requireCompanyMember(req.supabase, req.user.id);
+      if (!canViewHiringPipeline(membership.membership_role)) {
+        return fail(res, 403, "Applicants are for recruiters and hiring managers.");
+      }
+      const jobId = Number(req.params.id);
+      if (!Number.isFinite(jobId)) return fail(res, 400, "Invalid job id.");
+
+      const { data: job, error: jobErr } = await req.supabase
+        .from("jobs")
+        .select("id, title, status, company_id, location, work_mode")
+        .eq("id", jobId)
+        .eq("company_id", membership.company_id)
+        .maybeSingle();
+      if (jobErr) throw new Error(jobErr.message);
+      if (!job) return fail(res, 404, "Job not found.");
+
+      const { data: apps, error: appErr } = await req.supabase
+        .from("applications")
+        .select(
+          "id, status, match_score, applied_at, cover_letter, how_you_fit, why_role, resume_id, ai_screening, candidate_id, candidates(id, first_name, last_name, profile_image_url, location, total_experience_years, professional_summary), resumes(id, file_name, file_url, file_type, is_primary)",
+        )
+        .eq("job_id", jobId)
+        .order("applied_at", { ascending: false });
+
+      let rows = apps || [];
+      let selectErr = appErr;
+      if (selectErr && /ai_screening/i.test(selectErr.message || "")) {
+        const fallbackAi = await req.supabase
+          .from("applications")
+          .select(
+            "id, status, match_score, applied_at, cover_letter, how_you_fit, why_role, resume_id, candidate_id, candidates(id, first_name, last_name, profile_image_url, location, total_experience_years, professional_summary), resumes(id, file_name, file_url, file_type, is_primary)",
+          )
+          .eq("job_id", jobId)
+          .order("applied_at", { ascending: false });
+        rows = fallbackAi.data || [];
+        selectErr = fallbackAi.error;
+      }
+      if (selectErr && /how_you_fit|why_role|resumes/i.test(selectErr.message || "")) {
+        const fallback = await req.supabase
+          .from("applications")
+          .select(
+            "id, status, match_score, applied_at, cover_letter, resume_id, candidate_id, candidates(id, first_name, last_name, profile_image_url, location, total_experience_years, professional_summary)",
+          )
+          .eq("job_id", jobId)
+          .order("applied_at", { ascending: false });
+        rows = fallback.data || [];
+        selectErr = fallback.error;
+      }
+      if (selectErr) throw new Error(selectErr.message);
+
+      // If resumes weren't joined (common: resumes RLS is candidate-only), load via service role.
+      const missingResumeIds = rows
+        .filter((row) => row.resume_id && !unwrap(row.resumes)?.file_url)
+        .map((row) => row.resume_id);
+      const resumesById = {};
+      if (missingResumeIds.length) {
+        const { supabaseAdmin } = require("../supabase");
+        const admin = supabaseAdmin();
+        const client = admin || req.supabase;
+        const { data: resumeRows } = await client
+          .from("resumes")
+          .select("id, file_name, file_url, file_type, is_primary")
+          .in("id", missingResumeIds);
+        for (const r of resumeRows || []) resumesById[r.id] = r;
+      }
+
+      const candidateIds = rows
+        .map((row) => {
+          const cand = unwrap(row.candidates);
+          return cand?.id || row.candidate_id;
+        })
+        .filter(Boolean);
+
+      const skillsById = {};
+      const rolesById = {};
+      if (candidateIds.length) {
+        const { data: skillRows } = await req.supabase
+          .from("candidate_skills")
+          .select("candidate_id, skills(name, category)")
+          .in("candidate_id", candidateIds);
+        for (const row of skillRows || []) {
+          const skill = unwrap(row.skills);
+          if (!skill?.name) continue;
+          if (skill.category === "desired_role") {
+            if (!rolesById[row.candidate_id]) rolesById[row.candidate_id] = [];
+            rolesById[row.candidate_id].push(skill.name);
+          } else {
+            if (!skillsById[row.candidate_id]) skillsById[row.candidate_id] = [];
+            skillsById[row.candidate_id].push(skill.name);
+          }
+        }
+      }
+
+      function parseCoverParts(cover) {
+        const text = String(cover || "");
+        const fitMatch = text.match(
+          /How I fit this role:\s*([\s\S]*?)(?:\n\s*Why I want this role:|$)/i,
+        );
+        const whyMatch = text.match(/Why I want this role:\s*([\s\S]*)$/i);
+        return {
+          fit: fitMatch?.[1]?.trim() || null,
+          why: whyMatch?.[1]?.trim() || null,
+        };
+      }
+
+      const applicants = rows.map((row) => {
+        const cand = unwrap(row.candidates) || {};
+        const resume = unwrap(row.resumes) || resumesById[row.resume_id] || null;
+        const cid = cand.id || row.candidate_id;
+        const name = [cand.first_name, cand.last_name]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+        const openRoles = rolesById[cid] || [];
+        const skills = (skillsById[cid] || []).slice(0, 4);
+        const expertise =
+          openRoles[0] || skills[0] || job.title || "Applicant";
+        const parsed = parseCoverParts(row.cover_letter);
+        const howYouFit = row.how_you_fit || parsed.fit || null;
+        const whyRole = row.why_role || parsed.why || null;
+
+        return {
+          application_id: row.id,
+          candidate_id: cid,
+          full_name: name || "Candidate",
+          profile_image_url: cand.profile_image_url || null,
+          expertise,
+          location: cand.location || null,
+          total_experience_years: cand.total_experience_years ?? null,
+          skills,
+          status: row.status || "applied",
+          match_score: row.match_score ?? null,
+          applied_at: row.applied_at || null,
+          cover_letter: row.cover_letter || null,
+          how_you_fit: howYouFit,
+          why_role: whyRole,
+          ai_screening: row.ai_screening || null,
+          resume: resume
+            ? {
+                id: resume.id,
+                file_name: resume.file_name,
+                file_url: resume.file_url,
+                file_type: resume.file_type,
+              }
+            : row.resume_id
+              ? { id: row.resume_id, file_name: "Resume", file_url: null, file_type: null }
+              : null,
+        };
+      });
+
+      res.json({
+        job: {
+          id: job.id,
+          title: job.title,
+          status: job.status,
+          location: job.location,
+          work_mode: job.work_mode,
+        },
+        applicants,
+      });
+    }),
+  );
+
+  admin.patch(
+    "/applications/:id",
+    asyncHandler(async (req, res) => {
+      const membership = await requireRecruiter(req.supabase, req.user.id);
+      const appId = Number(req.params.id);
+      if (!Number.isFinite(appId)) return fail(res, 400, "Invalid application id.");
+
+      const status = normalizeStage(req.body?.status);
+      if (!isAllowedStage(status)) {
+        return fail(res, 400, "Invalid application status.");
+      }
+      if (status === "offer" || status === "hired") {
+        return fail(
+          res,
+          400,
+          "Use Offers to send an offer. Hired is set when the candidate accepts.",
+        );
+      }
+
+      const { data: app, error: findErr } = await req.supabase
+        .from("applications")
+        .select("id, job_id, jobs(company_id)")
+        .eq("id", appId)
+        .maybeSingle();
+      if (findErr) throw new Error(findErr.message);
+      if (!app) return fail(res, 404, "Application not found.");
+
+      const job = unwrap(app.jobs);
+      if (!job || job.company_id !== membership.company_id) {
+        return fail(res, 403, "This application is not for your company.");
+      }
+
+      const patch = { status, approved_for_offer: false };
+
+      let { data, error } = await req.supabase
+        .from("applications")
+        .update(patch)
+        .eq("id", appId)
+        .select(
+          "id, status, match_score, applied_at, candidate_id, job_id, approved_for_offer",
+        )
+        .single();
+
+      if (error && /approved_for_offer/i.test(error.message || "")) {
+        ({ data, error } = await req.supabase
+          .from("applications")
+          .update({ status })
+          .eq("id", appId)
+          .select("id, status, match_score, applied_at, candidate_id, job_id")
+          .single());
+      }
+      if (error) throw new Error(error.message);
+      res.json(data);
+    }),
+  );
+
+  admin.post(
+    "/applications/:id/approve",
+    asyncHandler(async (req, res) => {
+      const membership = await requireHiringManager(req.supabase, req.user.id);
+      const appId = Number(req.params.id);
+      if (!Number.isFinite(appId)) return fail(res, 400, "Invalid application id.");
+
+      const { data: app, error: findErr } = await req.supabase
+        .from("applications")
+        .select(
+          "id, status, candidate_id, job_id, jobs(company_id, title, companies(name)), candidates(user_id, first_name)",
+        )
+        .eq("id", appId)
+        .maybeSingle();
+      if (findErr) throw new Error(findErr.message);
+      if (!app) return fail(res, 404, "Application not found.");
+      const job = unwrap(app.jobs);
+      if (!job || job.company_id !== membership.company_id) {
+        return fail(res, 403, "This application is not for your company.");
+      }
+
+      const patch = {
+        approved_for_offer: true,
+        approved_at: new Date().toISOString(),
+        approved_by: req.user.id,
+      };
+
+      let { data, error } = await req.supabase
+        .from("applications")
+        .update(patch)
+        .eq("id", appId)
+        .select(
+          "id, status, approved_for_offer, approved_at, candidate_id, job_id",
+        )
+        .single();
+
+      if (error && /approved_for_offer|approved_at|approved_by/i.test(error.message || "")) {
+        return fail(
+          res,
+          400,
+          "Run supabase/interview-feedback.sql to enable hiring approvals.",
+        );
+      }
+      if (error) throw new Error(error.message);
+
+      const cand = unwrap(app.candidates);
+      const companyName = unwrap(job.companies)?.name || "Company";
+      if (cand?.user_id) {
+        await req.supabase.from("notifications").insert({
+          user_id: cand.user_id,
+          notification_type: "application",
+          title: `Approved for offer · ${companyName}`,
+          message: [
+            `From ${companyName}`,
+            `Role: ${job.title}`,
+            "A hiring manager approved you for an offer. The recruiter will send details next.",
+          ].join("\n"),
+          entity_type: "application",
+          entity_id: appId,
+        });
+      }
+
+      res.json(data);
+    }),
+  );
+
+  admin.post(
+    "/applications/:id/reject",
+    asyncHandler(async (req, res) => {
+      const membership = await requireCompanyMember(req.supabase, req.user.id);
+      const role = membership.membership_role;
+      if (
+        role !== "founder" &&
+        role !== "recruiter" &&
+        role !== "hiring_manager"
+      ) {
+        return fail(res, 403, "You cannot reject applications.");
+      }
+
+      const appId = Number(req.params.id);
+      if (!Number.isFinite(appId)) return fail(res, 400, "Invalid application id.");
+
+      const { data: app, error: findErr } = await req.supabase
+        .from("applications")
+        .select(
+          "id, jobs(company_id, title, companies(name)), candidates(user_id)",
+        )
+        .eq("id", appId)
+        .maybeSingle();
+      if (findErr) throw new Error(findErr.message);
+      if (!app) return fail(res, 404, "Application not found.");
+      const job = unwrap(app.jobs);
+      if (!job || job.company_id !== membership.company_id) {
+        return fail(res, 403, "This application is not for your company.");
+      }
+
+      const { data, error } = await req.supabase
+        .from("applications")
+        .update({
+          status: "rejected",
+          approved_for_offer: false,
+        })
+        .eq("id", appId)
+        .select("id, status, candidate_id, job_id")
+        .single();
+
+      if (error && /approved_for_offer/i.test(error.message || "")) {
+        const fallback = await req.supabase
+          .from("applications")
+          .update({ status: "rejected" })
+          .eq("id", appId)
+          .select("id, status, candidate_id, job_id")
+          .single();
+        if (fallback.error) throw new Error(fallback.error.message);
+        res.json(fallback.data);
+        return;
+      }
+      if (error) throw new Error(error.message);
+
+      const cand = unwrap(app.candidates);
+      const companyName = unwrap(job.companies)?.name || "Company";
+      if (cand?.user_id) {
+        await req.supabase.from("notifications").insert({
+          user_id: cand.user_id,
+          notification_type: "application",
+          title: `Update from ${companyName}`,
+          message: [
+            `From ${companyName}`,
+            `Role: ${job.title}`,
+            "Your application was not moved forward.",
+          ].join("\n"),
+          entity_type: "application",
+          entity_id: appId,
+        });
+      }
+
+      res.json(data);
+    }),
+  );
+
+  admin.post(
+    "/applications/:id/screen",
+    asyncHandler(async (req, res) => {
+      const membership = await requireRecruiter(req.supabase, req.user.id);
+      const appId = Number(req.params.id);
+      if (!Number.isFinite(appId)) return fail(res, 400, "Invalid application id.");
+
+      const { data: app, error: findErr } = await req.supabase
+        .from("applications")
+        .select("id, jobs(company_id)")
+        .eq("id", appId)
+        .maybeSingle();
+      if (findErr) throw new Error(findErr.message);
+      if (!app) return fail(res, 404, "Application not found.");
+      const job = unwrap(app.jobs);
+      if (!job || job.company_id !== membership.company_id) {
+        return fail(res, 403, "This application is not for your company.");
+      }
+
+      try {
+        const result = await screenApplication(req.supabase, appId);
+        res.json(result);
+      } catch (err) {
+        const status = err.status || 500;
+        return fail(res, status, err.message || "AI screening failed.");
+      }
+    }),
+  );
+
   admin.patch(
     "/jobs/:id",
     asyncHandler(async (req, res) => {
@@ -645,8 +1047,11 @@ function mountCompanyHiringRoutes(admin) {
 
       const activeStatuses = new Set([
         "applied",
+        "resume_screening",
         "screening",
         "shortlisted",
+        "technical_interview",
+        "hr_interview",
         "interview",
         "interviewing",
         "offer",
@@ -666,7 +1071,9 @@ function mountCompanyHiringRoutes(admin) {
       }).length;
 
       const pendingReviews = applications.filter((a) =>
-        ["applied", "screening"].includes(String(a.status || "").toLowerCase()),
+        ["applied", "resume_screening", "screening"].includes(
+          String(a.status || "").toLowerCase(),
+        ),
       ).length;
 
       const acceptedOffers = offers.filter((o) =>
@@ -683,22 +1090,17 @@ function mountCompanyHiringRoutes(admin) {
 
       const funnelStages = [
         { key: "applied", label: "Applied" },
-        { key: "screening", label: "Screening" },
+        { key: "resume_screening", label: "Resume Screening" },
         { key: "shortlisted", label: "Shortlisted" },
-        { key: "interview", label: "Interview" },
+        { key: "technical_interview", label: "Technical Interview" },
+        { key: "hr_interview", label: "HR Interview" },
         { key: "offer", label: "Offer" },
         { key: "hired", label: "Hired" },
       ];
       const hiringFunnel = funnelStages.map((stage) => ({
         ...stage,
         count: applications.filter((a) => {
-          const s = String(a.status || "").toLowerCase();
-          if (stage.key === "interview") {
-            return s === "interview" || s === "interviewing";
-          }
-          if (stage.key === "hired") {
-            return s === "hired" || s === "accepted";
-          }
+          const s = normalizeStage(a.status || "");
           return s === stage.key;
         }).length,
       }));
@@ -786,6 +1188,762 @@ function mountCompanyHiringRoutes(admin) {
         monthly_hiring: months,
         recent_activity: recentActivity,
       });
+    }),
+  );
+
+  async function companyJobIds(supabase, companyId) {
+    const { data, error } = await supabase
+      .from("jobs")
+      .select("id")
+      .eq("company_id", companyId);
+    if (error) throw new Error(error.message);
+    return (data || []).map((j) => j.id);
+  }
+
+  function parseSalaryInput(value) {
+    if (value == null || value === "") return null;
+    if (typeof value === "number" && Number.isFinite(value)) return Math.round(value);
+    const raw = String(value).trim().toLowerCase().replace(/,/g, "");
+    const lakh = raw.match(/^₹?\s*([\d.]+)\s*l(?:akh|acs|pa)?s?$/i) || raw.match(/^([\d.]+)\s*l$/);
+    if (lakh) return Math.round(Number(lakh[1]) * 100000);
+    const digits = raw.replace(/[^\d.]/g, "");
+    if (!digits) return null;
+    const n = Number(digits);
+    return Number.isFinite(n) ? Math.round(n) : null;
+  }
+
+  function mapPipelineApplicant(row, job) {
+    const cand = unwrap(row.candidates) || {};
+    const name = [cand.first_name, cand.last_name].filter(Boolean).join(" ").trim();
+    return {
+      application_id: row.id,
+      candidate_id: cand.id || row.candidate_id,
+      full_name: name || "Candidate",
+      profile_image_url: cand.profile_image_url || null,
+      email: cand.email || null,
+      user_id: cand.user_id || null,
+      location: cand.location || null,
+      status: normalizeStage(row.status || "applied"),
+      status_label: appStageLabel(row.status || "applied"),
+      match_score: row.match_score ?? null,
+      applied_at: row.applied_at || null,
+      how_you_fit: row.how_you_fit || null,
+      why_role: row.why_role || null,
+      cover_letter: row.cover_letter || null,
+      approved_for_offer: Boolean(row.approved_for_offer),
+      approved_at: row.approved_at || null,
+      ai_screening: row.ai_screening || null,
+      job: job
+        ? {
+            id: job.id,
+            title: job.title,
+            location: job.location,
+            salary_min: job.salary_min,
+            salary_max: job.salary_max,
+          }
+        : {
+            id: row.job_id,
+            title: unwrap(row.jobs)?.title || "Role",
+            location: unwrap(row.jobs)?.location || null,
+            salary_min: unwrap(row.jobs)?.salary_min ?? null,
+            salary_max: unwrap(row.jobs)?.salary_max ?? null,
+          },
+    };
+  }
+
+  admin.get(
+    "/shortlist",
+    asyncHandler(async (req, res) => {
+      const membership = await requireCompanyMember(req.supabase, req.user.id);
+      if (!canViewHiringPipeline(membership.membership_role)) {
+        return fail(res, 403, "Shortlist is for recruiters and hiring managers.");
+      }
+      const jobIds = await companyJobIds(req.supabase, membership.company_id);
+      if (!jobIds.length) return res.json({ applicants: [] });
+
+      const shortlistStatuses = [
+        "shortlisted",
+        "technical_interview",
+        "hr_interview",
+        "interview",
+        "interviewing",
+      ];
+
+      let { data, error } = await req.supabase
+        .from("applications")
+        .select(
+          "id, status, match_score, applied_at, cover_letter, how_you_fit, why_role, approved_for_offer, approved_at, ai_screening, candidate_id, job_id, candidates(id, first_name, last_name, profile_image_url, location, user_id), jobs(id, title, location, salary_min, salary_max)",
+        )
+        .in("job_id", jobIds)
+        .in("status", shortlistStatuses)
+        .order("applied_at", { ascending: false });
+
+      if (error && /ai_screening/i.test(error.message || "")) {
+        ({ data, error } = await req.supabase
+          .from("applications")
+          .select(
+            "id, status, match_score, applied_at, cover_letter, how_you_fit, why_role, approved_for_offer, approved_at, candidate_id, job_id, candidates(id, first_name, last_name, profile_image_url, location, user_id), jobs(id, title, location, salary_min, salary_max)",
+          )
+          .in("job_id", jobIds)
+          .in("status", shortlistStatuses)
+          .order("applied_at", { ascending: false }));
+      }
+
+      if (error && /how_you_fit|why_role|approved_for_offer/i.test(error.message || "")) {
+        ({ data, error } = await req.supabase
+          .from("applications")
+          .select(
+            "id, status, match_score, applied_at, cover_letter, approved_for_offer, approved_at, candidate_id, job_id, candidates(id, first_name, last_name, profile_image_url, location, user_id), jobs(id, title, location, salary_min, salary_max)",
+          )
+          .in("job_id", jobIds)
+          .in("status", shortlistStatuses)
+          .order("applied_at", { ascending: false }));
+      }
+
+      if (error && /approved_for_offer|approved_at/i.test(error.message || "")) {
+        ({ data, error } = await req.supabase
+          .from("applications")
+          .select(
+            "id, status, match_score, applied_at, cover_letter, candidate_id, job_id, candidates(id, first_name, last_name, profile_image_url, location, user_id), jobs(id, title, location, salary_min, salary_max)",
+          )
+          .in("job_id", jobIds)
+          .in("status", ["shortlisted", "technical_interview", "hr_interview", "interview", "interviewing"])
+          .order("applied_at", { ascending: false }));
+      }
+      if (error) throw new Error(error.message);
+
+      res.json({
+        applicants: (data || []).map((row) => mapPipelineApplicant(row)),
+      });
+    }),
+  );
+
+  admin.get(
+    "/pipeline",
+    asyncHandler(async (req, res) => {
+      const membership = await requireCompanyMember(req.supabase, req.user.id);
+      if (!canViewHiringPipeline(membership.membership_role)) {
+        return fail(res, 403, "Pipeline is for recruiters and hiring managers.");
+      }
+      const jobIds = await companyJobIds(req.supabase, membership.company_id);
+      if (!jobIds.length) return res.json({ applicants: [] });
+
+      const statusRaw = String(req.query.status || "").trim().toLowerCase();
+      const status = statusRaw ? normalizeStage(statusRaw) : "";
+      let query = req.supabase
+        .from("applications")
+        .select(
+          "id, status, match_score, applied_at, cover_letter, how_you_fit, why_role, approved_for_offer, ai_screening, candidate_id, job_id, candidates(id, first_name, last_name, profile_image_url, location, user_id), jobs(id, title, location, salary_min, salary_max)",
+        )
+        .in("job_id", jobIds)
+        .order("applied_at", { ascending: false });
+
+      if (status) query = query.eq("status", status);
+
+      let { data, error } = await query;
+      if (error && /ai_screening|approved_for_offer|how_you_fit|why_role/i.test(error.message || "")) {
+        let fallback = req.supabase
+          .from("applications")
+          .select(
+            "id, status, match_score, applied_at, cover_letter, candidate_id, job_id, candidates(id, first_name, last_name, profile_image_url, location, user_id), jobs(id, title, location, salary_min, salary_max)",
+          )
+          .in("job_id", jobIds)
+          .order("applied_at", { ascending: false });
+        if (status) fallback = fallback.eq("status", status);
+        ({ data, error } = await fallback);
+      }
+      if (error) throw new Error(error.message);
+      res.json({
+        applicants: (data || []).map((row) => mapPipelineApplicant(row)),
+      });
+    }),
+  );
+
+  admin.get(
+    "/offers",
+    asyncHandler(async (req, res) => {
+      const membership = await requireCompanyMember(req.supabase, req.user.id);
+      if (!canViewHiringPipeline(membership.membership_role)) {
+        return fail(res, 403, "Offers are for recruiters and hiring managers.");
+      }
+      const jobIds = await companyJobIds(req.supabase, membership.company_id);
+      if (!jobIds.length) return res.json({ offers: [] });
+
+      const { data, error } = await req.supabase
+        .from("offer_letters")
+        .select(
+          "id, salary, joining_date, location, offer_pdf_url, status, created_at, candidate_id, job_id, candidates(id, first_name, last_name, profile_image_url), jobs(id, title)",
+        )
+        .in("job_id", jobIds)
+        .order("created_at", { ascending: false });
+      if (error) throw new Error(error.message);
+
+      res.json({
+        offers: (data || []).map((row) => {
+          const cand = unwrap(row.candidates) || {};
+          const job = unwrap(row.jobs) || {};
+          const name = [cand.first_name, cand.last_name]
+            .filter(Boolean)
+            .join(" ")
+            .trim();
+          return {
+            id: row.id,
+            salary: row.salary,
+            joining_date: row.joining_date,
+            location: row.location,
+            offer_pdf_url: row.offer_pdf_url,
+            status: row.status,
+            created_at: row.created_at,
+            candidate_id: row.candidate_id,
+            job_id: row.job_id,
+            candidate_name: name || "Candidate",
+            job_title: job.title || "Role",
+            profile_image_url: cand.profile_image_url || null,
+          };
+        }),
+      });
+    }),
+  );
+
+  admin.post(
+    "/offers",
+    asyncHandler(async (req, res) => {
+      const membership = await requireRecruiter(req.supabase, req.user.id);
+      const applicationId = Number(req.body?.application_id);
+      if (!Number.isFinite(applicationId)) {
+        return fail(res, 400, "Pick a shortlisted candidate.");
+      }
+
+      const salary = parseSalaryInput(req.body?.salary ?? req.body?.ctc);
+      if (salary == null || salary <= 0) {
+        return fail(res, 400, "Enter a valid CTC / salary.");
+      }
+
+      const { data: app, error: appErr } = await req.supabase
+        .from("applications")
+        .select(
+          "id, status, candidate_id, job_id, approved_for_offer, jobs(id, title, location, company_id, companies(name)), candidates(id, user_id, first_name, last_name)",
+        )
+        .eq("id", applicationId)
+        .maybeSingle();
+      if (appErr) throw new Error(appErr.message);
+      if (!app) return fail(res, 404, "Application not found.");
+
+      const job = unwrap(app.jobs);
+      if (!job || job.company_id !== membership.company_id) {
+        return fail(res, 403, "This application is not for your company.");
+      }
+
+      const isFounder = membership.membership_role === "founder";
+      if (!isFounder && !app.approved_for_offer) {
+        return fail(
+          res,
+          403,
+          "Hiring manager must approve this candidate before you can send an offer.",
+        );
+      }
+
+      const roleTitle = String(req.body?.role || req.body?.title || job.title || "")
+        .trim();
+      const location =
+        String(req.body?.location || job.location || "").trim() || null;
+      const joining_date = req.body?.joining_date
+        ? String(req.body.joining_date).slice(0, 10)
+        : null;
+
+      const insert = {
+        candidate_id: app.candidate_id,
+        job_id: app.job_id,
+        salary,
+        joining_date,
+        location,
+        status: "sent",
+        offer_pdf_url: null,
+      };
+
+      let { data: offer, error } = await req.supabase
+        .from("offer_letters")
+        .insert(insert)
+        .select(
+          "id, salary, joining_date, location, offer_pdf_url, status, created_at, candidate_id, job_id",
+        )
+        .single();
+
+      if (error && /row-level security/i.test(error.message || "")) {
+        return fail(
+          res,
+          403,
+          "Offer create is blocked by RLS. Run supabase/offer-letters.sql in the Supabase SQL editor, then try again.",
+        );
+      }
+      if (error) throw new Error(error.message);
+
+      await req.supabase
+        .from("applications")
+        .update({ status: "offer" })
+        .eq("id", applicationId);
+
+      const cand = unwrap(app.candidates);
+      const companyName = unwrap(job.companies)?.name || "Company";
+      if (cand?.user_id) {
+        await req.supabase.from("notifications").insert({
+          user_id: cand.user_id,
+          notification_type: "offer",
+          title: `Offer from ${companyName}`,
+          message: [
+            `From ${companyName}`,
+            `Role: ${roleTitle || job.title}`,
+            "You received an offer letter. Open Offers to accept or reject.",
+          ].join("\n"),
+          entity_type: "offer",
+          entity_id: offer.id,
+        });
+      }
+
+      const name = [cand?.first_name, cand?.last_name]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+
+      res.status(201).json({
+        ...offer,
+        candidate_name: name || "Candidate",
+        job_title: roleTitle || job.title,
+      });
+    }),
+  );
+
+  admin.post(
+    "/interviews",
+    asyncHandler(async (req, res) => {
+      const membership = await requireRecruiter(req.supabase, req.user.id);
+      const applicationId = Number(req.body?.application_id);
+      const scheduledAt = String(req.body?.scheduled_at || "").trim();
+      const interviewerId = String(req.body?.interviewer_id || "").trim();
+      if (!Number.isFinite(applicationId)) {
+        return fail(res, 400, "Pick a candidate.");
+      }
+      if (!scheduledAt) return fail(res, 400, "Pick a date and time.");
+      if (!interviewerId) {
+        return fail(res, 400, "Pick an interviewer.");
+      }
+
+      const { data: interviewerMember } = await req.supabase
+        .from("company_members")
+        .select("user_id, role")
+        .eq("company_id", membership.company_id)
+        .eq("user_id", interviewerId)
+        .maybeSingle();
+      if (
+        !interviewerMember ||
+        (interviewerMember.role !== "interviewer" &&
+          interviewerMember.role !== "founder")
+      ) {
+        return fail(res, 400, "Pick a company interviewer.");
+      }
+
+      const { data: app, error: appErr } = await req.supabase
+        .from("applications")
+        .select(
+          "id, candidate_id, job_id, jobs(company_id, title, companies(name)), candidates(user_id, first_name, last_name)",
+        )
+        .eq("id", applicationId)
+        .maybeSingle();
+      if (appErr) throw new Error(appErr.message);
+      if (!app) return fail(res, 404, "Application not found.");
+      const job = unwrap(app.jobs);
+      if (!job || job.company_id !== membership.company_id) {
+        return fail(res, 403, "This application is not for your company.");
+      }
+
+      const interviewType = String(req.body?.interview_type || "technical").trim();
+      const insert = {
+        application_id: applicationId,
+        interviewer_id: interviewerId,
+        interview_type: interviewType,
+        scheduled_at: new Date(scheduledAt).toISOString(),
+        duration_minutes: Number(req.body?.duration_minutes) || 60,
+        meeting_link: String(req.body?.meeting_link || "").trim() || null,
+        location: String(req.body?.location || "").trim() || null,
+        status: "scheduled",
+      };
+
+      let { data, error } = await req.supabase
+        .from("interviews")
+        .insert(insert)
+        .select(
+          "id, interview_type, scheduled_at, duration_minutes, status, meeting_link, interviewer_id",
+        )
+        .single();
+
+      if (error && /interviewer_id/i.test(error.message || "")) {
+        return fail(
+          res,
+          400,
+          "Run supabase/interview-feedback.sql so interviews can be assigned to interviewers.",
+        );
+      }
+      if (error && /row-level security/i.test(error.message || "")) {
+        return fail(
+          res,
+          403,
+          "Interview create is blocked by RLS. Run supabase/offer-letters.sql and supabase/interview-feedback.sql, then try again.",
+        );
+      }
+      if (error) throw new Error(error.message);
+
+      const appStatus = roundToAppStatus(interviewType);
+      await req.supabase
+        .from("applications")
+        .update({ status: appStatus })
+        .eq("id", applicationId);
+
+      const cand = unwrap(app.candidates);
+      const companyName = unwrap(job.companies)?.name || "Company";
+      if (cand?.user_id) {
+        await req.supabase.from("notifications").insert({
+          user_id: cand.user_id,
+          notification_type: "interview",
+          title: `Interview with ${companyName}`,
+          message: [
+            `From ${companyName}`,
+            `Role: ${job.title}`,
+            `Round: ${interviewType.replace(/_/g, " ")}`,
+            `When: ${new Date(scheduledAt).toLocaleString("en-IN")}`,
+            insert.meeting_link ? `Join: ${insert.meeting_link}` : null,
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          entity_type: "interview",
+          entity_id: data.id,
+        });
+      }
+
+      if (interviewerId && interviewerId !== req.user.id) {
+        await req.supabase.from("notifications").insert({
+          user_id: interviewerId,
+          notification_type: "interview",
+          title: "Interview assigned",
+          message: [
+            `You were assigned an interview for ${job.title}.`,
+            `When: ${new Date(scheduledAt).toLocaleString("en-IN")}`,
+          ].join("\n"),
+          entity_type: "interview",
+          entity_id: data.id,
+        });
+      }
+
+      res.status(201).json(data);
+    }),
+  );
+
+  admin.get(
+    "/interviewers",
+    asyncHandler(async (req, res) => {
+      const membership = await requireRecruiter(req.supabase, req.user.id);
+      const { data, error } = await req.supabase
+        .from("company_members")
+        .select("user_id, role, users(id, full_name, email, profile_image_url)")
+        .eq("company_id", membership.company_id)
+        .in("role", ["interviewer", "founder"]);
+      if (error) throw new Error(error.message);
+
+      res.json({
+        interviewers: (data || []).map((row) => {
+          const u = unwrap(row.users) || {};
+          return {
+            user_id: row.user_id,
+            role: row.role,
+            full_name: u.full_name || "Teammate",
+            email: u.email || null,
+            profile_image_url: u.profile_image_url || null,
+          };
+        }),
+      });
+    }),
+  );
+
+  admin.get(
+    "/interviews/assigned",
+    asyncHandler(async (req, res) => {
+      await requireInterviewer(req.supabase, req.user.id);
+
+      let { data, error } = await req.supabase
+        .from("interviews")
+        .select(
+          "id, interview_type, scheduled_at, duration_minutes, meeting_link, location, status, interviewer_id, feedback_technical, feedback_communication, feedback_problem_solving, feedback_teamwork, feedback_leadership, feedback_overall, feedback_comments, feedback_submitted_at, application_id, applications(id, status, candidate_id, ai_screening, candidates(id, first_name, last_name, profile_image_url, location), jobs(id, title, companies(name)))",
+        )
+        .eq("interviewer_id", req.user.id)
+        .order("scheduled_at", { ascending: true });
+
+      if (error && /ai_screening/i.test(error.message || "")) {
+        ({ data, error } = await req.supabase
+          .from("interviews")
+          .select(
+            "id, interview_type, scheduled_at, duration_minutes, meeting_link, location, status, interviewer_id, feedback_technical, feedback_communication, feedback_problem_solving, feedback_teamwork, feedback_leadership, feedback_overall, feedback_comments, feedback_submitted_at, application_id, applications(id, status, candidate_id, candidates(id, first_name, last_name, profile_image_url, location), jobs(id, title, companies(name)))",
+          )
+          .eq("interviewer_id", req.user.id)
+          .order("scheduled_at", { ascending: true }));
+      }
+
+      if (error && /interviewer_id|feedback_/i.test(error.message || "")) {
+        return fail(
+          res,
+          400,
+          "Run supabase/interview-feedback.sql to enable assigned interviews.",
+        );
+      }
+      if (error) throw new Error(error.message);
+
+      res.json({
+        interviews: (data || []).map((row) => {
+          const app = unwrap(row.applications) || {};
+          const cand = unwrap(app.candidates) || {};
+          const job = unwrap(app.jobs) || {};
+          const company = unwrap(job.companies);
+          const name = [cand.first_name, cand.last_name]
+            .filter(Boolean)
+            .join(" ")
+            .trim();
+          const screening = app.ai_screening || null;
+          const questions = screening?.questions || null;
+          return {
+            id: row.id,
+            interview_type: row.interview_type,
+            scheduled_at: row.scheduled_at,
+            duration_minutes: row.duration_minutes,
+            meeting_link: row.meeting_link,
+            location: row.location,
+            status: row.status,
+            application_id: row.application_id,
+            candidate_name: name || "Candidate",
+            candidate_id: cand.id || app.candidate_id,
+            profile_image_url: cand.profile_image_url || null,
+            candidate_location: cand.location || null,
+            job_title: job.title || "Role",
+            company_name: company?.name || null,
+            screening_questions: questions,
+            match_summary: screening
+              ? {
+                  match_percentage: screening.match_percentage ?? null,
+                  strong_skills: screening.strong_skills || [],
+                  missing_skills: screening.missing_skills || [],
+                  recommendation: screening.recommendation || null,
+                }
+              : null,
+            feedback: row.feedback_submitted_at
+              ? {
+                  technical: row.feedback_technical,
+                  communication: row.feedback_communication,
+                  problem_solving: row.feedback_problem_solving,
+                  teamwork: row.feedback_teamwork,
+                  leadership: row.feedback_leadership,
+                  overall: row.feedback_overall,
+                  comments: row.feedback_comments,
+                  submitted_at: row.feedback_submitted_at,
+                }
+              : null,
+          };
+        }),
+      });
+    }),
+  );
+
+  admin.post(
+    "/interviews/:id/feedback",
+    asyncHandler(async (req, res) => {
+      await requireInterviewer(req.supabase, req.user.id);
+      const interviewId = Number(req.params.id);
+      if (!Number.isFinite(interviewId)) {
+        return fail(res, 400, "Invalid interview id.");
+      }
+
+      const { data: existing, error: findErr } = await req.supabase
+        .from("interviews")
+        .select("id, interviewer_id, application_id")
+        .eq("id", interviewId)
+        .maybeSingle();
+      if (findErr) throw new Error(findErr.message);
+      if (!existing) return fail(res, 404, "Interview not found.");
+      if (existing.interviewer_id !== req.user.id) {
+        return fail(res, 403, "This interview is not assigned to you.");
+      }
+
+      const num = (v) => {
+        const n = Number(v);
+        if (!Number.isFinite(n) || n < 1 || n > 5) return null;
+        return n;
+      };
+
+      const patch = {
+        feedback_technical: num(req.body?.technical),
+        feedback_communication: num(req.body?.communication),
+        feedback_problem_solving: num(req.body?.problem_solving),
+        feedback_teamwork: num(req.body?.teamwork),
+        feedback_leadership: num(req.body?.leadership),
+        feedback_overall: num(req.body?.overall),
+        feedback_comments: String(req.body?.comments || "").trim() || null,
+        feedback_submitted_at: new Date().toISOString(),
+        status: "completed",
+      };
+
+      if (
+        !patch.feedback_technical ||
+        !patch.feedback_communication ||
+        !patch.feedback_problem_solving ||
+        !patch.feedback_teamwork ||
+        !patch.feedback_leadership ||
+        !patch.feedback_overall
+      ) {
+        return fail(res, 400, "Rate all categories from 1 to 5.");
+      }
+
+      const { data, error } = await req.supabase
+        .from("interviews")
+        .update(patch)
+        .eq("id", interviewId)
+        .eq("interviewer_id", req.user.id)
+        .select(
+          "id, status, feedback_technical, feedback_communication, feedback_problem_solving, feedback_teamwork, feedback_leadership, feedback_overall, feedback_comments, feedback_submitted_at",
+        )
+        .single();
+
+      if (error && /feedback_|interviewer_id/i.test(error.message || "")) {
+        return fail(
+          res,
+          400,
+          "Run supabase/interview-feedback.sql to enable feedback.",
+        );
+      }
+      if (error) throw new Error(error.message);
+      res.json(data);
+    }),
+  );
+
+  admin.get(
+    "/applications/:id/feedback",
+    asyncHandler(async (req, res) => {
+      const membership = await requireHiringManager(req.supabase, req.user.id);
+      const appId = Number(req.params.id);
+      if (!Number.isFinite(appId)) return fail(res, 400, "Invalid application id.");
+
+      const { data: app, error: appErr } = await req.supabase
+        .from("applications")
+        .select("id, job_id, jobs(company_id, title)")
+        .eq("id", appId)
+        .maybeSingle();
+      if (appErr) throw new Error(appErr.message);
+      if (!app) return fail(res, 404, "Application not found.");
+      const job = unwrap(app.jobs);
+      if (!job || job.company_id !== membership.company_id) {
+        return fail(res, 403, "This application is not for your company.");
+      }
+
+      let { data, error } = await req.supabase
+        .from("interviews")
+        .select(
+          "id, interview_type, scheduled_at, status, interviewer_id, feedback_technical, feedback_communication, feedback_problem_solving, feedback_teamwork, feedback_leadership, feedback_overall, feedback_comments, feedback_submitted_at, users:interviewer_id(full_name)",
+        )
+        .eq("application_id", appId)
+        .order("scheduled_at", { ascending: true });
+
+      if (error) {
+        ({ data, error } = await req.supabase
+          .from("interviews")
+          .select(
+            "id, interview_type, scheduled_at, status, interviewer_id, feedback_technical, feedback_communication, feedback_problem_solving, feedback_teamwork, feedback_leadership, feedback_overall, feedback_comments, feedback_submitted_at",
+          )
+          .eq("application_id", appId)
+          .order("scheduled_at", { ascending: true }));
+      }
+      if (error && /feedback_/i.test(error.message || "")) {
+        return res.json({ feedback: [] });
+      }
+      if (error) throw new Error(error.message);
+
+      res.json({
+        feedback: (data || []).map((row) => {
+          const interviewer = unwrap(row.users);
+          return {
+            interview_id: row.id,
+            interview_type: row.interview_type,
+            scheduled_at: row.scheduled_at,
+            status: row.status,
+            interviewer_name: interviewer?.full_name || "Interviewer",
+            technical: row.feedback_technical,
+            communication: row.feedback_communication,
+            problem_solving: row.feedback_problem_solving,
+            teamwork: row.feedback_teamwork,
+            leadership: row.feedback_leadership,
+            overall: row.feedback_overall,
+            comments: row.feedback_comments,
+            submitted_at: row.feedback_submitted_at,
+          };
+        }),
+      });
+    }),
+  );
+
+  admin.post(
+    "/messages",
+    asyncHandler(async (req, res) => {
+      const membership = await requireRecruiter(req.supabase, req.user.id);
+      const applicationId = Number(req.body?.application_id);
+      const subject = String(req.body?.subject || "").trim();
+      const message = String(req.body?.message || "").trim();
+      if (!Number.isFinite(applicationId)) {
+        return fail(res, 400, "Pick a candidate.");
+      }
+      if (!subject || !message) {
+        return fail(res, 400, "Subject and message are required.");
+      }
+
+      const { data: app, error: appErr } = await req.supabase
+        .from("applications")
+        .select(
+          "id, jobs(company_id, title, companies(name)), candidates(user_id, first_name)",
+        )
+        .eq("id", applicationId)
+        .maybeSingle();
+      if (appErr) throw new Error(appErr.message);
+      if (!app) return fail(res, 404, "Application not found.");
+      const job = unwrap(app.jobs);
+      if (!job || job.company_id !== membership.company_id) {
+        return fail(res, 403, "This application is not for your company.");
+      }
+
+      const cand = unwrap(app.candidates);
+      if (!cand?.user_id) {
+        return fail(res, 400, "Candidate account not found for messaging.");
+      }
+
+      const companyName = unwrap(job.companies)?.name || "Company";
+      const jobTitle = job.title || "the role";
+      const composed = [
+        `From ${companyName}`,
+        `Role: ${jobTitle}`,
+        "",
+        message,
+      ].join("\n");
+
+      const { error } = await req.supabase.from("notifications").insert({
+        user_id: cand.user_id,
+        notification_type: "message",
+        title: subject,
+        message: composed,
+        entity_type: "application",
+        entity_id: applicationId,
+      });
+      if (error && /row-level security/i.test(error.message || "")) {
+        return fail(
+          res,
+          403,
+          "Message is blocked by RLS. Run supabase/notifications.sql in the Supabase SQL editor, then try again.",
+        );
+      }
+      if (error) throw new Error(error.message);
+
+      res.status(201).json({ ok: true });
     }),
   );
 }

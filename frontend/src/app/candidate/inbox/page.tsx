@@ -7,6 +7,15 @@ import {
   type NotificationRow,
 } from "@/lib/candidate";
 
+function typeLabel(type: string) {
+  const t = String(type || "").toLowerCase();
+  if (t === "message") return "Message";
+  if (t === "interview") return "Interview";
+  if (t === "offer") return "Offer";
+  if (t === "application") return "Application";
+  return t.replace(/_/g, " ") || "Update";
+}
+
 export default function InboxPage() {
   const [rows, setRows] = useState<NotificationRow[]>([]);
   const [error, setError] = useState("");
@@ -42,7 +51,7 @@ export default function InboxPage() {
               <button
                 type="button"
                 className={`block w-full px-5 py-4 text-left hover:bg-soft ${
-                  n.is_read ? "" : "bg-soft/50"
+                  n.is_read ? "" : "bg-soft/40"
                 }`}
                 onClick={async () => {
                   if (!n.is_read) {
@@ -57,11 +66,27 @@ export default function InboxPage() {
                   }
                 }}
               >
-                <p className="text-sm font-semibold">{n.title}</p>
-                <p className="mt-1 text-sm text-muted">{n.message}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-md border border-line px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted">
+                    {typeLabel(n.notification_type)}
+                  </span>
+                  {!n.is_read ? (
+                    <span className="text-[10px] font-semibold text-brand">
+                      New
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mt-2 text-sm font-semibold">{n.title}</p>
+                {(n.company_name || n.job_title) && (
+                  <p className="mt-1 text-sm text-brand">
+                    {[n.company_name, n.job_title].filter(Boolean).join(" · ")}
+                  </p>
+                )}
+                <p className="mt-1 whitespace-pre-wrap text-sm text-muted">
+                  {n.message}
+                </p>
                 <p className="mt-2 text-xs text-muted">
-                  {new Date(n.created_at).toLocaleString()}
-                  {n.is_read ? "" : " · New"}
+                  {new Date(n.created_at).toLocaleString("en-IN")}
                 </p>
               </button>
             </li>
