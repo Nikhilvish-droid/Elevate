@@ -101,6 +101,9 @@ export type CandidateFull = {
   linkedin_url: string | null;
   professional_summary: string | null;
   total_experience_years: number | null;
+  gender_identity: string | null;
+  pronouns: string | null;
+  show_pronouns_on_profile: boolean;
   profile_completion_percentage: number;
   education: {
     id: number;
@@ -109,11 +112,13 @@ export type CandidateFull = {
     field_of_study: string | null;
     start_date: string | null;
     end_date: string | null;
+    grade: string | null;
   }[];
   experience: {
     id: number;
     company_name: string;
     job_title: string;
+    employment_type: string | null;
     is_current: boolean;
     start_date: string | null;
     end_date: string | null;
@@ -121,7 +126,15 @@ export type CandidateFull = {
     description: string | null;
   }[];
   skills: { name: string; category?: string | null }[];
-  certifications: { certification_name: string }[];
+  certifications: {
+    id?: number;
+    certification_name: string;
+    issuing_organization?: string | null;
+    file_url?: string | null;
+    file_name?: string | null;
+    storage_path?: string | null;
+    credential_url?: string | null;
+  }[];
   resumes: {
     id: number;
     file_name: string;
@@ -141,6 +154,9 @@ export type ProfileDraft = {
   github_url?: string | null;
   linkedin_url?: string | null;
   profile_image_url?: string | null;
+  pronouns?: string | null;
+  gender_identity?: string | null;
+  show_pronouns_on_profile?: boolean;
   skills: string[];
   open_to_roles: string[];
   education: {
@@ -149,17 +165,25 @@ export type ProfileDraft = {
     field_of_study?: string | null;
     start_year?: string | null;
     end_year?: string | null;
+    gpa?: string | null;
+    gpa_max?: string | null;
   }[];
   experience: {
     company_name: string;
     job_title: string;
+    employment_type?: string | null;
     start_date: string;
     end_date?: string | null;
     is_current: boolean;
     location?: string | null;
     description?: string | null;
   }[];
-  certifications?: string[];
+  certifications?: {
+    certification_name: string;
+    issuing_organization?: string | null;
+    file_url?: string | null;
+    file_name?: string | null;
+  }[];
   resume?: {
     file_name: string;
     file_url: string;

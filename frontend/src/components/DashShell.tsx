@@ -12,6 +12,7 @@ import {
   isOnboarded,
   peekProfile,
   signOut,
+  deleteAccount,
   teamLabel,
 } from "@/lib/profile";
 import { ThemeToggle } from "@/lib/theme";
@@ -38,6 +39,7 @@ export function DashShell({
   const router = useRouter();
   const [user, setLocal] = useState<Profile | null>(() => peekProfile() ?? null);
   const [menu, setMenu] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -100,6 +102,21 @@ export function DashShell({
     await signOut();
     router.push("/");
     router.refresh();
+  }
+
+  async function removeAccount() {
+    const typed = window.prompt(
+      "Delete your Elevate account permanently?\nType DELETE to continue:",
+    );
+    if (typed !== "DELETE") return;
+    setDeleteBusy(true);
+    try {
+      await deleteAccount();
+      window.location.href = "/";
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Could not delete account.");
+      setDeleteBusy(false);
+    }
   }
 
   if (!user) {
@@ -210,6 +227,14 @@ export function DashShell({
                   className="block w-full px-3 py-2 text-left text-sm hover:bg-soft"
                 >
                   Log out
+                </button>
+                <button
+                  type="button"
+                  disabled={deleteBusy}
+                  onClick={removeAccount}
+                  className="block w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-soft"
+                >
+                  {deleteBusy ? "Deleting…" : "Delete account"}
                 </button>
               </div>
             ) : null}

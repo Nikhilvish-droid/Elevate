@@ -2,6 +2,7 @@ const express = require("express");
 const { unwrap, splitName, asyncHandler, fail } = require("../lib/helpers");
 const { getCandidateId } = require("../lib/users");
 const { loadFullProfile } = require("../lib/candidateProfile");
+const { replaceEducation, replaceExperience, replaceCertifications } = require("../lib/candidateSave");
 
 const router = express.Router();
 
@@ -95,6 +96,9 @@ router.put(
       github_url: draft.github_url || null,
       linkedin_url: draft.linkedin_url || null,
       profile_image_url: draft.profile_image_url || undefined,
+      gender_identity: draft.gender_identity || null,
+      pronouns: draft.pronouns || null,
+      show_pronouns_on_profile: Boolean(draft.show_pronouns_on_profile),
       updated_at: new Date().toISOString(),
     };
     if (phone !== undefined) candPatch.phone = phone;
@@ -105,47 +109,11 @@ router.put(
       .eq("id", candidateId);
     if (candErr) throw new Error(candErr.message);
 
-    await req.supabase.from("candidate_education").delete().eq("candidate_id", candidateId);
-    for (const edu of draft.education || []) {
-      if (!edu.institution_name?.trim()) continue;
-      await req.supabase.from("candidate_education").insert({
-        candidate_id: candidateId,
-        institution_name: edu.institution_name.trim(),
-        degree: edu.degree || null,
-        field_of_study: edu.field_of_study || null,
-        start_date: edu.start_year?.trim() ? `${edu.start_year.trim()}-01-01` : edu.start_date || null,
-        end_date: edu.end_year?.trim() ? `${edu.end_year.trim()}-01-01` : edu.end_date || null,
-      });
-    }
-
-    await req.supabase.from("candidate_experience").delete().eq("candidate_id", candidateId);
-    for (const exp of draft.experience || []) {
-      if (!exp.company_name?.trim() || !exp.job_title?.trim()) continue;
-      await req.supabase.from("candidate_experience").insert({
-        candidate_id: candidateId,
-        company_name: exp.company_name.trim(),
-        job_title: exp.job_title.trim(),
-        start_date: exp.start_date || new Date().toISOString().slice(0, 10),
-        end_date: exp.is_current ? null : exp.end_date || null,
-        is_current: Boolean(exp.is_current),
-        location: exp.location || null,
-        description: exp.description?.trim() || null,
-      });
-    }
+    await replaceEducation(req.supabase, candidateId, draft.education || []);
+    await replaceExperience(req.supabase, candidateId, draft.experience || []);
 
     if (draft.certifications) {
-      await req.supabase
-        .from("candidate_certifications")
-        .delete()
-        .eq("candidate_id", candidateId);
-      for (const name of draft.certifications) {
-        const certification_name = String(name || "").trim();
-        if (!certification_name) continue;
-        await req.supabase.from("candidate_certifications").insert({
-          candidate_id: candidateId,
-          certification_name,
-        });
-      }
+      await replaceCertifications(req.supabase, candidateId, draft.certifications);
     }
 
     await syncSkillNames(req.supabase, candidateId, draft.skills, "skill");

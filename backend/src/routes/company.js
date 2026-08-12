@@ -7,9 +7,11 @@ const {
   assertFounder,
   membershipLabel,
 } = require("../lib/company");
+const { mountCompanyHiringRoutes } = require("./companyHiring");
 
 const requests = express.Router();
 const admin = express.Router();
+mountCompanyHiringRoutes(admin);
 
 requests.post(
   "/",

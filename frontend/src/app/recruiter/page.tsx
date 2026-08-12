@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   DashShell,
   IconBrief,
@@ -12,17 +12,25 @@ import {
   IconStar,
   IconUsers,
 } from "@/components/DashShell";
-import { applicants, postedJobs } from "@/data/mock";
+import { CompanyDashboardPanel } from "@/components/company/CompanyDashboard";
+import { HomeCandidatesPanel } from "@/components/company/HomeCandidatesPanel";
+import { JobsPanel } from "@/components/company/JobsPanel";
+import { ProfilesPanel } from "@/components/company/ProfilesPanel";
+import { applicants } from "@/data/mock";
 import {
   getCompanyTeam,
+  getCompanyWorkspace,
   reviewJoinRequest,
   type CompanyTeam,
+  type CompanyWorkspace,
 } from "@/lib/company";
 import { Profile, getProfile } from "@/lib/profile";
 
 type View =
   | "home"
+  | "dashboard"
   | "jobs"
+  | "profiles"
   | "apps"
   | "shortlist"
   | "interviews"
@@ -30,35 +38,88 @@ type View =
   | "offers"
   | "team";
 
+function IconChart() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M4 19V5M4 19h16M8 17V11M12 17V7M16 17v-4"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function IconUser() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="12" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.8" />
+      <path
+        d="M5 19c1.5-3 4-4.5 7-4.5S17.5 16 19 19"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export default function RecruiterPage() {
   const [user, setLocal] = useState<Profile | null>(null);
+  const [workspace, setWorkspace] = useState<CompanyWorkspace | null>(null);
   const [view, setView] = useState<View>("home");
   const [shortlisted, setShortlisted] = useState<string[]>(["a3", "a4"]);
   const [team, setTeam] = useState<CompanyTeam | null>(null);
   const [teamError, setTeamError] = useState("");
   const [reviewing, setReviewing] = useState<number | null>(null);
+  const [openJobCreate, setOpenJobCreate] = useState(false);
 
-  async function loadTeam() {
+  const loadTeam = useCallback(async () => {
     try {
       setTeamError("");
       setTeam(await getCompanyTeam());
     } catch (err) {
       setTeamError(err instanceof Error ? err.message : "Could not load team.");
     }
-  }
+  }, []);
+
+  const loadWorkspace = useCallback(async () => {
+    try {
+      setWorkspace(await getCompanyWorkspace());
+    } catch {
+      setWorkspace(null);
+    }
+  }, []);
 
   useEffect(() => {
     getProfile().then(setLocal);
     loadTeam();
-  }, []);
+    loadWorkspace();
+  }, [loadTeam, loadWorkspace]);
 
-  const company = user?.company_name ?? "Your company";
-  const name = user?.full_name ?? "Recruiter";
-  const title = user?.job_title ?? "Recruiter";
+  const company =
+    workspace?.company.name || user?.company_name || "Your company";
+  const name = user?.full_name || workspace?.me.full_name || "Recruiter";
+  const title = user?.job_title || "Recruiter";
+  const isFounder =
+    workspace?.is_founder ||
+    user?.membership_role === "founder" ||
+    user?.team_role === "founder";
+  const canManageJobs = workspace?.can_manage_jobs ?? true;
+  const companyDetailsDefault = [
+    workspace?.company.name,
+    workspace?.company.industry,
+    workspace?.company.description,
+  ]
+    .filter(Boolean)
+    .join(" — ");
 
   const nav = [
     { label: "Home", icon: <IconHome />, id: "home" as View },
+    { label: "Dashboard", icon: <IconChart />, id: "dashboard" as View },
     { label: "Jobs", icon: <IconBrief />, id: "jobs" as View },
+    { label: "Profiles", icon: <IconUser />, id: "profiles" as View },
     { label: "Apps", icon: <IconList />, id: "apps" as View },
     { label: "Shortlist", icon: <IconStar />, id: "shortlist" as View },
     { label: "Interview", icon: <IconCal />, id: "interviews" as View },
@@ -71,6 +132,11 @@ export default function RecruiterPage() {
     setShortlisted((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
+  }
+
+  function goPostJob() {
+    setOpenJobCreate(true);
+    setView("jobs");
   }
 
   return (
@@ -92,79 +158,36 @@ export default function RecruiterPage() {
               company={company}
               name={name}
               title={title}
-              onPost={() => setView("jobs")}
+              logoUrl={workspace?.company.logo_url}
+              canPost={canManageJobs}
+              onPost={goPostJob}
               onTeam={() => setView("team")}
+              onProfiles={() => setView("profiles")}
+              onDashboard={() => setView("dashboard")}
             />
-            {team || teamError ? (
-              <div className="mt-8">
-                <TeamPanel
-                  team={team}
-                  error={teamError}
-                  reviewing={reviewing}
-                  onReview={async (id, action) => {
-                    setReviewing(id);
-                    try {
-                      await reviewJoinRequest(id, action);
-                      await loadTeam();
-                    } catch (err) {
-                      setTeamError(
-                        err instanceof Error
-                          ? err.message
-                          : "Could not update request.",
-                      );
-                    } finally {
-                      setReviewing(null);
-                    }
-                  }}
-                />
-              </div>
-            ) : null}
-            <section className="mt-8">
-              <div className="mb-4">
-                <h2 className="font-display text-xl font-bold">Candidates</h2>
-                <p className="mt-1 text-sm text-muted">
-                  Applications ranked by match. You can shortlist, email, and
-                  schedule — not company settings.
-                </p>
-              </div>
-              <CandidateList
-                rows={applicants}
-                shortlisted={shortlisted}
-                onShortlist={toggleShortlist}
-                onSchedule={() => setView("interviews")}
-                onEmail={() => setView("email")}
-              />
-            </section>
+            <HomeCandidatesPanel />
           </>
         ) : null}
 
+        {view === "dashboard" ? <CompanyDashboardPanel /> : null}
+
         {view === "jobs" ? (
-          <Panel title="Post jobs" sub="Create and manage open roles." action="New job">
-            <ul className="divide-y divide-line border border-line bg-elevated">
-              {postedJobs.map((job) => (
-                <li
-                  key={job.id}
-                  className="flex flex-wrap items-center justify-between gap-3 px-5 py-4"
-                >
-                  <div>
-                    <p className="font-semibold">{job.title}</p>
-                    <p className="text-sm text-muted">
-                      {job.applicants} applicants · Posted {job.posted}
-                    </p>
-                  </div>
-                  <span
-                    className={`rounded-md px-2.5 py-1 text-xs font-semibold ${
-                      job.status === "Open"
-                        ? "bg-soft text-brand"
-                        : "bg-line text-muted"
-                    }`}
-                  >
-                    {job.status}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </Panel>
+          <JobsPanel
+            canManage={canManageJobs}
+            companyName={company}
+            companyDetailsDefault={companyDetailsDefault}
+            openCreate={openJobCreate}
+            onCreateHandled={() => setOpenJobCreate(false)}
+          />
+        ) : null}
+
+        {view === "profiles" ? (
+          <ProfilesPanel
+            onProfileUpdated={(profile) => {
+              setLocal(profile);
+              loadWorkspace();
+            }}
+          />
         ) : null}
 
         {view === "apps" ? (
@@ -256,7 +279,14 @@ export default function RecruiterPage() {
         ) : null}
 
         {view === "offers" ? (
-          <Panel title="Offer letters" sub="Generate an offer. Company settings stay with admin.">
+          <Panel
+            title="Offer letters"
+            sub={
+              isFounder
+                ? "Generate an offer for a shortlisted candidate."
+                : "Generate an offer. Company settings stay with the founder."
+            }
+          >
             <SimpleForm
               fields={[
                 {
@@ -280,40 +310,71 @@ function ProfileCard({
   company,
   name,
   title,
+  logoUrl,
+  canPost,
   onPost,
   onTeam,
+  onProfiles,
+  onDashboard,
 }: {
   company: string;
   name: string;
   title: string;
+  logoUrl?: string | null;
+  canPost: boolean;
   onPost: () => void;
   onTeam: () => void;
+  onProfiles: () => void;
+  onDashboard: () => void;
 }) {
   return (
-    <>
-      <section className="border border-line bg-elevated px-5 py-6 sm:px-7">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex gap-4">
+    <section className="border border-line bg-elevated px-5 py-6 sm:px-7">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex gap-4">
+          {logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={logoUrl}
+              alt=""
+              className="h-16 w-16 shrink-0 rounded-full object-cover"
+            />
+          ) : (
             <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-soft text-xl font-bold text-brand">
               {company.slice(0, 1)}
             </div>
-            <div>
-              <h1 className="font-display text-2xl font-bold tracking-tight">
-                {company}
-              </h1>
-              <p className="mt-0.5 text-sm text-muted">
-                {name} · {title}
-              </p>
-            </div>
+          )}
+          <div>
+            <h1 className="font-display text-2xl font-bold tracking-tight">
+              {company}
+            </h1>
+            <p className="mt-0.5 text-sm text-muted">
+              {name} · {title}
+            </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={onTeam}
-              className="rounded-md border border-line px-4 py-2 text-sm font-semibold hover:bg-soft"
-            >
-              Team
-            </button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onDashboard}
+            className="rounded-md border border-line px-4 py-2 text-sm font-semibold hover:bg-soft"
+          >
+            Dashboard
+          </button>
+          <button
+            type="button"
+            onClick={onProfiles}
+            className="rounded-md border border-line px-4 py-2 text-sm font-semibold hover:bg-soft"
+          >
+            Profiles
+          </button>
+          <button
+            type="button"
+            onClick={onTeam}
+            className="rounded-md border border-line px-4 py-2 text-sm font-semibold hover:bg-soft"
+          >
+            Team
+          </button>
+          {canPost ? (
             <button
               type="button"
               onClick={onPost}
@@ -321,20 +382,20 @@ function ProfileCard({
             >
               Post a job
             </button>
-          </div>
+          ) : null}
         </div>
-        <div className="mt-6 border-t border-line pt-5">
-          <p className="text-sm font-medium">Hiring status</p>
-          <button
-            type="button"
-            className="mt-2 inline-flex items-center gap-2 rounded-md border border-line px-3 py-2 text-sm"
-          >
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-            Actively hiring
-          </button>
-        </div>
-      </section>
-    </>
+      </div>
+      <div className="mt-6 border-t border-line pt-5">
+        <p className="text-sm font-medium">Hiring status</p>
+        <button
+          type="button"
+          className="mt-2 inline-flex items-center gap-2 rounded-md border border-line px-3 py-2 text-sm"
+        >
+          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+          Actively hiring
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -362,9 +423,7 @@ function TeamPanel({
         <h2 className="font-display text-xl font-bold">Team</h2>
         <p className="mt-1 text-sm text-muted">
           Everyone here belongs to {team?.company_name ?? "this company"} only.
-          {team?.is_founder
-            ? " Approve join requests to grant access."
-            : ""}
+          {team?.is_founder ? " Approve join requests to grant access." : ""}
         </p>
       </div>
       {error ? (
@@ -482,29 +541,17 @@ function TeamPanel({
 function Panel({
   title,
   sub,
-  action,
   children,
 }: {
   title: string;
   sub: string;
-  action?: string;
   children: React.ReactNode;
 }) {
   return (
     <section>
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="font-display text-xl font-bold">{title}</h2>
-          <p className="mt-1 text-sm text-muted">{sub}</p>
-        </div>
-        {action ? (
-          <button
-            type="button"
-            className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-deep"
-          >
-            {action}
-          </button>
-        ) : null}
+      <div className="mb-4">
+        <h2 className="font-display text-xl font-bold">{title}</h2>
+        <p className="mt-1 text-sm text-muted">{sub}</p>
       </div>
       {children}
     </section>

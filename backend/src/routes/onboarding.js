@@ -1,6 +1,7 @@
 const express = require("express");
 const { asyncHandler, splitName, fail } = require("../lib/helpers");
 const { ensureAppUser, assignRole, buildSessionProfile } = require("../lib/users");
+const { replaceEducation, replaceExperience, replaceCertifications } = require("../lib/candidateSave");
 
 const router = express.Router();
 
@@ -39,6 +40,9 @@ router.post(
       github_url: input.github || null,
       linkedin_url: input.linkedin || null,
       professional_summary: input.cover_letter || null,
+      gender_identity: input.gender_identity || null,
+      pronouns: input.pronouns || null,
+      show_pronouns_on_profile: Boolean(input.show_pronouns_on_profile),
       updated_at: new Date().toISOString(),
     };
 
@@ -70,28 +74,33 @@ router.post(
       candidateId = data.id;
     }
 
-    if (input.education?.trim()) {
-      await req.supabase.from("candidate_education").insert({
-        candidate_id: candidateId,
-        institution_name: input.education.trim(),
-        description: input.education.trim(),
-      });
+    if (Array.isArray(input.education) && input.education.length) {
+      await replaceEducation(req.supabase, candidateId, input.education);
+    } else if (typeof input.education === "string" && input.education.trim()) {
+      await replaceEducation(req.supabase, candidateId, [
+        { institution_name: input.education.trim() },
+      ]);
     }
-    if (input.experience?.trim()) {
-      await req.supabase.from("candidate_experience").insert({
-        candidate_id: candidateId,
-        company_name: "Experience",
-        job_title: "Professional experience",
-        start_date: new Date().toISOString().slice(0, 10),
-        is_current: true,
-        description: input.experience.trim(),
-      });
+
+    if (Array.isArray(input.experience) && input.experience.length) {
+      await replaceExperience(req.supabase, candidateId, input.experience);
+    } else if (typeof input.experience === "string" && input.experience.trim()) {
+      await replaceExperience(req.supabase, candidateId, [
+        {
+          company_name: "Experience",
+          job_title: "Professional experience",
+          start_date: new Date().toISOString().slice(0, 10),
+          is_current: true,
+          description: input.experience.trim(),
+        },
+      ]);
     }
-    if (input.certifications?.trim()) {
-      await req.supabase.from("candidate_certifications").insert({
-        candidate_id: candidateId,
-        certification_name: input.certifications.trim(),
-      });
+    if (Array.isArray(input.certifications) && input.certifications.length) {
+      await replaceCertifications(req.supabase, candidateId, input.certifications);
+    } else if (typeof input.certifications === "string" && input.certifications.trim()) {
+      await replaceCertifications(req.supabase, candidateId, [
+        { certification_name: input.certifications.trim() },
+      ]);
     }
     if (input.skills?.trim()) {
       const names = input.skills.split(/[,|]/).map((s) => s.trim()).filter(Boolean);

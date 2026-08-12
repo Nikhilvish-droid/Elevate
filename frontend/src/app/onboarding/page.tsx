@@ -12,6 +12,18 @@ import {
   inputClass,
 } from "@/components/Auth";
 import {
+  EducationList,
+  ExperienceList,
+  CertificationList,
+  GenderFields,
+  emptyEducation,
+  emptyExperience,
+  emptyCertificate,
+  type EduRow,
+  type ExpRow,
+  type CertRow,
+} from "@/components/candidate/CandidateFormSections";
+import {
   searchCompanies,
   requestToJoinCompany,
   refreshSession,
@@ -29,7 +41,7 @@ import {
   teamFromRoleName,
   teamLabel,
 } from "@/lib/profile";
-import { uploadAvatar, uploadResume } from "@/lib/storage";
+import { uploadAvatar, uploadResume, uploadCertificate } from "@/lib/storage";
 
 type Role = "candidate" | "company";
 type CompanyPath =
@@ -92,10 +104,13 @@ function Onboarding() {
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [location, setLocation] = useState("");
-  const [education, setEducation] = useState("");
-  const [experience, setExperience] = useState("");
+  const [pronouns, setPronouns] = useState("");
+  const [genderIdentity, setGenderIdentity] = useState("");
+  const [showPronouns, setShowPronouns] = useState(false);
+  const [educationRows, setEducationRows] = useState<EduRow[]>([emptyEducation()]);
+  const [experienceRows, setExperienceRows] = useState<ExpRow[]>([emptyExperience()]);
+  const [certRows, setCertRows] = useState<CertRow[]>([emptyCertificate()]);
   const [skills, setSkills] = useState("");
-  const [certifications, setCertifications] = useState("");
   const [portfolio, setPortfolio] = useState("");
   const [github, setGithub] = useState("");
   const [linkedin, setLinkedin] = useState("");
@@ -209,14 +224,36 @@ function Onboarding() {
         : null;
       const resume = resumeFile ? await uploadResume(resumeFile) : null;
 
+      const certifications = [];
+      for (const row of certRows.filter((c) => c.certification_name.trim())) {
+        let file_url: string | null = row.existing_file_url || null;
+        let file_name: string | null = row.existing_file_name || null;
+        if (row.file) {
+          const uploaded = await uploadCertificate(row.file);
+          file_url = uploaded.file_url;
+          file_name = uploaded.file_name;
+        }
+        certifications.push({
+          certification_name: row.certification_name.trim(),
+          issuing_organization: row.issuing_organization.trim() || null,
+          file_url,
+          file_name,
+        });
+      }
+
       const profile = await saveCandidateOnboarding({
         full_name: fullName.trim(),
         phone: phone.trim() || null,
         location: location.trim() || null,
-        education: education.trim() || null,
-        experience: experience.trim() || null,
+        pronouns: pronouns || null,
+        gender_identity: genderIdentity || null,
+        show_pronouns_on_profile: showPronouns,
+        education: educationRows.filter((e) => e.institution_name.trim()),
+        experience: experienceRows.filter(
+          (e) => e.company_name.trim() && e.job_title.trim(),
+        ),
+        certifications,
         skills: skills.trim() || null,
-        certifications: certifications.trim() || null,
         portfolio: portfolio.trim() || null,
         github: github.trim() || null,
         linkedin: linkedin.trim() || null,
@@ -254,7 +291,9 @@ function Onboarding() {
     setBusy(true);
     setError("");
     try {
-      const logo_url = logoFile ? await uploadAvatar(logoFile) : null;
+      const logo_url = logoFile
+        ? await uploadAvatar(logoFile, { kind: "logo" })
+        : null;
       const profile_image_url = founderPhoto
         ? await uploadAvatar(founderPhoto)
         : null;
@@ -710,28 +749,36 @@ function Onboarding() {
             onChange={(e) => setLocation(e.target.value)}
             placeholder="City, Country"
           />
-          <label className="block text-sm font-medium" htmlFor="education">
-            Education
-            <textarea
-              id="education"
-              rows={2}
-              value={education}
-              onChange={(e) => setEducation(e.target.value)}
-              className={inputClass}
-              placeholder="Degree, school, year"
-            />
-          </label>
-          <label className="block text-sm font-medium" htmlFor="experience">
-            Experience
-            <textarea
-              id="experience"
-              rows={3}
-              value={experience}
-              onChange={(e) => setExperience(e.target.value)}
-              className={inputClass}
-              placeholder="Roles, companies, years"
-            />
-          </label>
+          <GenderFields
+            compact
+            pronouns={pronouns}
+            genderIdentity={genderIdentity}
+            showPronouns={showPronouns}
+            onPronouns={setPronouns}
+            onGender={setGenderIdentity}
+            onShowPronouns={setShowPronouns}
+          />
+          <div>
+            <p className="text-sm font-medium">Education</p>
+            <p className="mt-1 text-xs text-muted">
+              School, degree, graduation year, and GPA.
+            </p>
+            <div className="mt-3">
+              <EducationList rows={educationRows} onChange={setEducationRows} />
+            </div>
+          </div>
+          <div>
+            <p className="text-sm font-medium">Work experience</p>
+            <p className="mt-1 text-xs text-muted">
+              Company, title, dates, and role type.
+            </p>
+            <div className="mt-3">
+              <ExperienceList
+                rows={experienceRows}
+                onChange={setExperienceRows}
+              />
+            </div>
+          </div>
           <Field
             label="Skills"
             name="skills"
@@ -739,12 +786,15 @@ function Onboarding() {
             onChange={(e) => setSkills(e.target.value)}
             placeholder="React, Node, SQL"
           />
-          <Field
-            label="Certifications"
-            name="certifications"
-            value={certifications}
-            onChange={(e) => setCertifications(e.target.value)}
-          />
+          <div>
+            <p className="text-sm font-medium">Certifications</p>
+            <p className="mt-1 text-xs text-muted">
+              Named credentials you earned — upload the certificate file for each.
+            </p>
+            <div className="mt-3">
+              <CertificationList rows={certRows} onChange={setCertRows} />
+            </div>
+          </div>
           <Field
             label="Portfolio"
             name="portfolio"

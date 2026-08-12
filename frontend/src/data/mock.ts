@@ -71,30 +71,6 @@ export const applicants = [
   },
 ];
 
-export const postedJobs = [
-  {
-    id: "j1",
-    title: "Machine Learning Engineer",
-    applicants: 24,
-    status: "Open",
-    posted: "Mar 2",
-  },
-  {
-    id: "j2",
-    title: "Product Designer",
-    applicants: 11,
-    status: "Open",
-    posted: "Feb 28",
-  },
-  {
-    id: "j3",
-    title: "DevOps Engineer",
-    applicants: 8,
-    status: "Paused",
-    posted: "Feb 12",
-  },
-];
-
 export const interviews = [
   {
     id: "i1",

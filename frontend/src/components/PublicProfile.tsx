@@ -207,8 +207,26 @@ export function PublicProfileView({
           <h2 className="font-display text-lg font-bold">Certifications</h2>
           <ul className="mt-3 space-y-2 text-sm">
             {profile.certifications.map((c, i) => (
-              <li key={`${c.certification_name}-${i}`}>
-                {c.certification_name}
+              <li
+                key={`${c.certification_name}-${i}`}
+                className="flex flex-wrap items-center justify-between gap-2"
+              >
+                <span>
+                  {c.certification_name}
+                  {c.issuing_organization
+                    ? ` · ${c.issuing_organization}`
+                    : ""}
+                </span>
+                {c.file_url ? (
+                  <a
+                    href={c.file_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-semibold text-brand"
+                  >
+                    View file
+                  </a>
+                ) : null}
               </li>
             ))}
           </ul>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -13,24 +14,28 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { getAccessToken } from "@/lib/auth/jwt";
 import { afterAuthPath, syncAuthUser } from "@/lib/profile";
+import { apiPublic } from "@/lib/api";
 
 function AuthForm() {
   const router = useRouter();
   const params = useSearchParams();
   const mode = params.get("tab") === "login" ? "login" : "signup";
   const hint = params.get("hint");
-  const authError = params.get("error");
+  const resetDone = params.get("reset") === "1";
+  const confirmed = params.get("confirmed") === "1";
   const isLogin = mode === "login";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPass, setShowPass] = useState(false);
-  const [error, setError] = useState(
-    authError ? "Sign-in failed. Try again." : "",
-  );
+  const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [info, setInfo] = useState("");
+  const [info, setInfo] = useState(() => {
+    if (resetDone) return "Password updated. Log in with your new password.";
+    if (confirmed) return "Email confirmed. You can log in now.";
+    return "";
+  });
 
   function onboardingPath() {
     return hint === "company" || hint === "candidate"
@@ -91,6 +96,7 @@ function AuthForm() {
 
     setBusy(true);
     const supabase = createClient();
+    const origin = window.location.origin;
 
     try {
       if (isLogin) {
@@ -106,7 +112,6 @@ function AuthForm() {
         return;
       }
 
-      const origin = window.location.origin;
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
@@ -120,11 +125,34 @@ function AuthForm() {
         return;
       }
 
-      // If email confirmation is on, session may be null
+      // Supabase returns a fake user with no identities when the email is taken.
+      if (data.user && (data.user.identities?.length ?? 0) === 0) {
+        setError("An account with this email already exists. Log in or reset your password.");
+        return;
+      }
+
+      // Email confirmation required — send link via our backend (Resend), not Supabase SMTP.
       if (!data.session) {
-        setInfo(
-          "Check your email to confirm your account, then log in.",
-        );
+        try {
+          await apiPublic("/api/auth/send-confirmation", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: email.trim(),
+              password,
+              redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(onboardingPath())}`,
+            }),
+          });
+          setInfo(
+            "Check your email for a confirmation link. Open it to finish signup, then log in.",
+          );
+        } catch (mailErr) {
+          setError(
+            mailErr instanceof Error
+              ? mailErr.message
+              : "Account created, but the confirmation email could not be sent.",
+          );
+        }
         return;
       }
 
@@ -172,13 +200,23 @@ function AuthForm() {
             onChange={(e) => setPassword(e.target.value)}
             placeholder={isLogin ? "Your password" : "Min. 8 characters"}
           />
-          <button
-            type="button"
-            className="mt-1.5 text-xs font-medium text-brand hover:underline"
-            onClick={() => setShowPass((v) => !v)}
-          >
-            {showPass ? "Hide" : "Show"} password
-          </button>
+          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+            <button
+              type="button"
+              className="text-xs font-medium text-brand hover:underline"
+              onClick={() => setShowPass((v) => !v)}
+            >
+              {showPass ? "Hide" : "Show"} password
+            </button>
+            {isLogin ? (
+              <Link
+                href={`/auth/forgot${email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ""}`}
+                className="text-xs font-medium text-brand hover:underline"
+              >
+                Forgot password?
+              </Link>
+            ) : null}
+          </div>
         </div>
 
         {!isLogin && (

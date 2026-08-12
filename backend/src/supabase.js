@@ -31,4 +31,16 @@ function supabaseAnon() {
   });
 }
 
-module.exports = { supabaseForToken, supabaseAnon };
+/** Optional admin client — only used to remove auth.users after app wipe */
+function supabaseAdmin() {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!key) return null;
+  return createClient(requireEnv("SUPABASE_URL"), key, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+}
+
+module.exports = { supabaseForToken, supabaseAnon, supabaseAdmin };

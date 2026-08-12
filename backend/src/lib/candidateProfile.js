@@ -10,6 +10,38 @@ async function loadCandidateRecord(supabase, candidateId) {
   return cand;
 }
 
+function certificateStoragePath(fileUrl) {
+  if (!fileUrl) return null;
+  if (!fileUrl.startsWith("http")) return fileUrl;
+  const match = fileUrl.match(
+    /\/object\/(?:sign|public)\/certificates\/([^?]+)/,
+  );
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+async function signCertificateUrls(supabase, certs) {
+  return Promise.all(
+    (certs || []).map(async (row) => {
+      const path = certificateStoragePath(row.file_url || row.credential_url);
+      if (!path) {
+        return {
+          ...row,
+          storage_path: row.file_url || null,
+        };
+      }
+      const { data } = await supabase.storage
+        .from("certificates")
+        .createSignedUrl(path, 60 * 60);
+      return {
+        ...row,
+        storage_path: path,
+        file_url: data?.signedUrl || row.file_url,
+        file_name: row.file_name || path.split("/").pop(),
+      };
+    }),
+  );
+}
+
 async function loadRelated(supabase, candidateId) {
   const [
     { data: education },
@@ -20,17 +52,19 @@ async function loadRelated(supabase, candidateId) {
   ] = await Promise.all([
     supabase
       .from("candidate_education")
-      .select("id, institution_name, degree, field_of_study, start_date, end_date")
+      .select("id, institution_name, degree, field_of_study, start_date, end_date, grade")
       .eq("candidate_id", candidateId),
     supabase
       .from("candidate_experience")
       .select(
-        "id, company_name, job_title, is_current, start_date, end_date, location, description",
+        "id, company_name, job_title, employment_type, is_current, start_date, end_date, location, description",
       )
       .eq("candidate_id", candidateId),
     supabase
       .from("candidate_certifications")
-      .select("certification_name")
+      .select(
+        "id, certification_name, issuing_organization, file_url, file_name, credential_url",
+      )
       .eq("candidate_id", candidateId),
     supabase
       .from("candidate_skills")
@@ -53,7 +87,7 @@ async function loadRelated(supabase, candidateId) {
   return {
     education: education || [],
     experience: experience || [],
-    certifications: certs || [],
+    certifications: await signCertificateUrls(supabase, certs || []),
     skills,
     resumes: await signResumeUrls(supabase, resumes || []),
   };
@@ -100,6 +134,9 @@ async function loadPublicProfile(supabase, candidateId) {
     last_name: cand.last_name,
     profile_image_url: cand.profile_image_url,
     location: cand.location,
+    gender_identity: cand.gender_identity ?? null,
+    pronouns: cand.pronouns ?? null,
+    show_pronouns_on_profile: cand.show_pronouns_on_profile ?? false,
     portfolio_url: cand.portfolio_url,
     github_url: cand.github_url,
     linkedin_url: cand.linkedin_url,

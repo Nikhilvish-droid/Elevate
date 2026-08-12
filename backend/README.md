@@ -12,7 +12,7 @@ The Next.js app should not query tables directly. Use this API for users, roles,
 cp .env.example .env
 ```
 
-Fill `SUPABASE_URL` and `SUPABASE_ANON_KEY` (same values as the frontend). Do **not** put the DB password or `service_role` key in the frontend.
+Fill `SUPABASE_URL` and `SUPABASE_ANON_KEY` (same values as the frontend). For signup / password-reset emails also set `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, and `RESEND_FROM` (see `.env.example`). Do **not** put the DB password or `service_role` key in the frontend.
 
 2. Install and run:
 
@@ -44,9 +44,13 @@ Get a token after login: open `http://localhost:3000/api/auth/token`
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/health` | Public health check |
+| GET | `/api/auth/email-status` | Whether Resend + service role are configured |
+| POST | `/api/auth/send-confirmation` | Email signup confirmation link `{ email, password, redirectTo? }` |
+| POST | `/api/auth/send-recovery` | Email password reset link `{ email, redirectTo? }` |
 | GET | `/api/profiles/:id` | Public candidate profile (`candidates.id`) |
 | POST | `/api/auth/sync` | Upsert `users` after login, return session profile |
 | GET | `/api/me` | Session profile (role, onboarding, candidate/company) |
+| DELETE | `/api/me` | Delete account `{ "confirm": "DELETE" }` |
 | POST | `/api/onboarding/candidate` | Candidate onboarding |
 | POST | `/api/onboarding/company` | Founder: create company + founder membership |
 | GET | `/api/companies?q=` | Search companies by name (min 2 chars) |
@@ -54,6 +58,17 @@ Get a token after login: open `http://localhost:3000/api/auth/token`
 | GET | `/api/company-requests/mine` | Current user's join requests |
 | PATCH | `/api/company-requests/:id` | Founder `{ "action": "approve" }` or `{ "action": "reject" }` |
 | GET | `/api/company/members` | Members grouped by role + pending (founder) |
+| GET | `/api/company/profile` | Company + member profile workspace |
+| PATCH | `/api/company/profile` | Founder-only company profile update |
+| PATCH | `/api/company/me` | Update own member profile |
+| GET | `/api/company/jobs` | Company jobs (founder/recruiter) |
+| POST | `/api/company/jobs` | Create job |
+| GET | `/api/company/jobs/:id` | Job detail |
+| PATCH | `/api/company/jobs/:id` | Edit job |
+| POST | `/api/company/jobs/:id/close` | Close job |
+| POST | `/api/company/jobs/:id/duplicate` | Duplicate job |
+| DELETE | `/api/company/jobs/:id` | Delete job |
+| GET | `/api/company/dashboard` | Hiring widgets + funnel + activity |
 | GET/PUT | `/api/candidate/profile` | Candidate profile |
 | GET | `/api/candidate/applications` | Applied jobs |
 | GET | `/api/candidate/interviews` | Interview schedule |

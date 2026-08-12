@@ -23,4 +23,4 @@ npm run dev
 - Frontend: http://localhost:3000
 - Backend: http://localhost:5000/health
 
-Company membership (founder approval): run `supabase/company-join.sql` in the Supabase SQL editor (re-run it if company create hits an RLS error). Founders create the company profile. Recruiters, hiring managers, and interviewers search and request to join; they only see that company after the founder approves.
+Company membership: run `supabase/company-join.sql` (re-run if company create hits RLS). Company job posting / dashboard reads: run `supabase/company-jobs.sql`. Candidate gender/pronouns/certs: run `supabase/candidate-profile-fields.sql`. Account delete: run `supabase/delete-account.sql`. Optional `SUPABASE_SERVICE_ROLE_KEY` in `backend/.env` also removes the Auth login.

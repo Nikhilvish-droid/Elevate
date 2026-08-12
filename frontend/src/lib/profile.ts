@@ -73,10 +73,34 @@ export type CandidateOnboardingInput = {
   full_name: string;
   phone?: string | null;
   location?: string | null;
-  education?: string | null;
-  experience?: string | null;
+  pronouns?: string | null;
+  gender_identity?: string | null;
+  show_pronouns_on_profile?: boolean;
+  education?: {
+    institution_name: string;
+    degree?: string | null;
+    field_of_study?: string | null;
+    start_year?: string | null;
+    end_year?: string | null;
+    gpa?: string | null;
+    gpa_max?: string | null;
+  }[];
+  experience?: {
+    company_name: string;
+    job_title: string;
+    employment_type?: string | null;
+    start_date?: string;
+    end_date?: string | null;
+    is_current?: boolean;
+    description?: string | null;
+  }[];
+  certifications?: {
+    certification_name: string;
+    issuing_organization?: string | null;
+    file_url?: string | null;
+    file_name?: string | null;
+  }[];
   skills?: string | null;
-  certifications?: string | null;
   portfolio?: string | null;
   github?: string | null;
   linkedin?: string | null;
@@ -126,6 +150,15 @@ export async function saveCompanyOnboarding(input: CompanyOnboardingInput) {
   });
   setProfileCache(profile);
   return profile;
+}
+
+/** Permanently deletes app profile data. Pass confirm: "DELETE". */
+export async function deleteAccount() {
+  await api<{ ok: boolean }>("/api/me", {
+    method: "DELETE",
+    body: JSON.stringify({ confirm: "DELETE" }),
+  });
+  await signOut();
 }
 
 export async function signOut() {

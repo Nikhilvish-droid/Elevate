@@ -70,6 +70,30 @@ async function assertFounder(supabase, userId, companyId) {
   return Boolean(data);
 }
 
+function canManageJobs(membershipRole) {
+  return membershipRole === "founder" || membershipRole === "recruiter";
+}
+
+async function requireCompanyMember(supabase, userId) {
+  const membership = await getMembership(supabase, userId);
+  if (!membership) {
+    const err = new Error("You are not in a company.");
+    err.status = 403;
+    throw err;
+  }
+  return membership;
+}
+
+async function requireJobManager(supabase, userId) {
+  const membership = await requireCompanyMember(supabase, userId);
+  if (!canManageJobs(membership.membership_role)) {
+    const err = new Error("Only founders and recruiters can manage jobs.");
+    err.status = 403;
+    throw err;
+  }
+  return membership;
+}
+
 module.exports = {
   MEMBER_ROLES,
   REQUEST_ROLES,
@@ -78,4 +102,7 @@ module.exports = {
   getMembership,
   getPendingJoinRequest,
   assertFounder,
+  canManageJobs,
+  requireCompanyMember,
+  requireJobManager,
 };

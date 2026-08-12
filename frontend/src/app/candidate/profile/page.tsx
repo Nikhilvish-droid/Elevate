@@ -3,13 +3,24 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { DocumentUpload, PhotoUpload, inputClass } from "@/components/Auth";
+import { DeleteAccountPanel } from "@/components/DeleteAccountPanel";
+import {
+  EducationList,
+  ExperienceList,
+  CertificationList,
+  GenderFields,
+  parseGpa,
+  type EduRow,
+  type ExpRow,
+  type CertRow,
+} from "@/components/candidate/CandidateFormSections";
 import {
   getCandidateFull,
   saveCandidateProfile,
   type CandidateFull,
 } from "@/lib/candidate";
 import { getProfile, homeFor, profilePath } from "@/lib/profile";
-import { uploadAvatar, uploadResume } from "@/lib/storage";
+import { uploadAvatar, uploadResume, uploadCertificate } from "@/lib/storage";
 
 const ROLE_OPTIONS = [
   "Machine Learning Engineer",
@@ -45,22 +56,8 @@ function Section({
   );
 }
 
-type Edu = {
-  institution_name: string;
-  degree: string;
-  field_of_study: string;
-  start_year: string;
-  end_year: string;
-};
-
-type Exp = {
-  company_name: string;
-  job_title: string;
-  start_date: string;
-  end_date: string;
-  is_current: boolean;
-  description: string;
-};
+type Edu = EduRow;
+type Exp = ExpRow;
 
 export default function CandidateProfilePage() {
   const [tab, setTab] = useState<"profile" | "resume">("profile");
@@ -72,8 +69,9 @@ export default function CandidateProfilePage() {
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [location, setLocation] = useState("");
-  const [certifications, setCertifications] = useState<string[]>([]);
-  const [certDraft, setCertDraft] = useState("");
+  const [pronouns, setPronouns] = useState("");
+  const [genderIdentity, setGenderIdentity] = useState("");
+  const [showPronouns, setShowPronouns] = useState(false);
   const [homeHref, setHomeHref] = useState("/candidate");
   const [primaryRole, setPrimaryRole] = useState("");
   const [years, setYears] = useState("");
@@ -87,21 +85,30 @@ export default function CandidateProfilePage() {
   const [skillDraft, setSkillDraft] = useState("");
   const [education, setEducation] = useState<Edu[]>([]);
   const [experience, setExperience] = useState<Exp[]>([]);
+  const [certRows, setCertRows] = useState<CertRow[]>([]);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [existingPhoto, setExistingPhoto] = useState<string | null>(null);
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [resumes, setResumes] = useState<CandidateFull["resumes"]>([]);
   const [shareUrl, setShareUrl] = useState("");
   const [copied, setCopied] = useState(false);
+  const [accountEmail, setAccountEmail] = useState<string | null>(null);
 
   function applyFull(c: CandidateFull) {
     setFullName([c.first_name, c.last_name].filter(Boolean).join(" "));
     setPhone(c.phone ?? "");
     setLocation(c.location ?? "");
-    setCertifications(
-      (c.certifications || [])
-        .map((x) => x.certification_name)
-        .filter(Boolean),
+    setPronouns(c.pronouns ?? "");
+    setGenderIdentity(c.gender_identity ?? "");
+    setShowPronouns(Boolean(c.show_pronouns_on_profile));
+    setCertRows(
+      (c.certifications || []).map((x) => ({
+        certification_name: x.certification_name,
+        issuing_organization: x.issuing_organization ?? "",
+        file: null,
+        existing_file_url: x.storage_path || null,
+        existing_file_name: x.file_name || null,
+      })),
     );
     setYears(
       c.total_experience_years != null ? String(c.total_experience_years) : "",
@@ -121,18 +128,24 @@ export default function CandidateProfilePage() {
     setOpenTo(roles);
     setPrimaryRole(roles[0] ?? "");
     setEducation(
-      c.education.map((e) => ({
-        institution_name: e.institution_name,
-        degree: e.degree ?? "",
-        field_of_study: e.field_of_study ?? "",
-        start_year: e.start_date ? e.start_date.slice(0, 4) : "",
-        end_year: e.end_date ? e.end_date.slice(0, 4) : "",
-      })),
+      c.education.map((e) => {
+        const { gpa, gpa_max } = parseGpa(e.grade);
+        return {
+          institution_name: e.institution_name,
+          degree: e.degree ?? "",
+          field_of_study: e.field_of_study ?? "",
+          start_year: e.start_date ? e.start_date.slice(0, 4) : "",
+          end_year: e.end_date ? e.end_date.slice(0, 4) : "",
+          gpa,
+          gpa_max,
+        };
+      }),
     );
     setExperience(
       c.experience.map((e) => ({
         company_name: e.company_name,
         job_title: e.job_title,
+        employment_type: e.employment_type ?? "full_time",
         start_date: e.start_date ?? "",
         end_date: e.end_date ?? "",
         is_current: e.is_current,
@@ -155,6 +168,7 @@ export default function CandidateProfilePage() {
       if (p) {
         setHomeHref(homeFor(p));
         setShareUrl(`${window.location.origin}${profilePath(p)}`);
+        setAccountEmail(p.email);
       }
     });
   }, []);
@@ -180,10 +194,30 @@ export default function CandidateProfilePage() {
       if (photoFile) profile_image_url = await uploadAvatar(photoFile);
       const resume = resumeFile ? await uploadResume(resumeFile) : null;
 
+      const certifications = [];
+      for (const row of certRows.filter((c) => c.certification_name.trim())) {
+        let file_url: string | null = row.existing_file_url || null;
+        let file_name: string | null = row.existing_file_name || null;
+        if (row.file) {
+          const uploaded = await uploadCertificate(row.file);
+          file_url = uploaded.file_url;
+          file_name = uploaded.file_name;
+        }
+        certifications.push({
+          certification_name: row.certification_name.trim(),
+          issuing_organization: row.issuing_organization.trim() || null,
+          file_url,
+          file_name,
+        });
+      }
+
       const next = await saveCandidateProfile({
         full_name: fullName.trim(),
         phone: phone.trim() || null,
         location: location.trim() || null,
+        pronouns: pronouns || null,
+        gender_identity: genderIdentity || null,
+        show_pronouns_on_profile: showPronouns,
         professional_summary: bio.trim() || null,
         total_experience_years: years ? Number(years) : null,
         portfolio_url: website.trim() || null,
@@ -439,6 +473,18 @@ export default function CandidateProfilePage() {
             </label>
           </Section>
 
+          <Section title="Identity" hint="Optional — shown on your profile if you choose.">
+            <GenderFields
+              compact
+              pronouns={pronouns}
+              genderIdentity={genderIdentity}
+              showPronouns={showPronouns}
+              onPronouns={setPronouns}
+              onGender={setGenderIdentity}
+              onShowPronouns={setShowPronouns}
+            />
+          </Section>
+
           <Section
             title="Social Profiles"
             hint="Where can people find you online?"
@@ -476,213 +522,11 @@ export default function CandidateProfilePage() {
             title="Your work experience"
             hint="What other positions have you held?"
           >
-            {experience.map((row, i) => (
-              <div key={i} className="grid gap-3 border border-line p-4 sm:grid-cols-2">
-                <label className="block text-sm font-medium">
-                  Company
-                  <input
-                    className={field}
-                    value={row.company_name}
-                    onChange={(e) => {
-                      const next = [...experience];
-                      next[i] = { ...row, company_name: e.target.value };
-                      setExperience(next);
-                    }}
-                    placeholder="Type to search"
-                  />
-                </label>
-                <label className="block text-sm font-medium">
-                  Title
-                  <input
-                    className={field}
-                    value={row.job_title}
-                    onChange={(e) => {
-                      const next = [...experience];
-                      next[i] = { ...row, job_title: e.target.value };
-                      setExperience(next);
-                    }}
-                    placeholder="Title"
-                  />
-                </label>
-                <label className="block text-sm font-medium">
-                  Start date
-                  <input
-                    type="date"
-                    className={field}
-                    value={row.start_date}
-                    onChange={(e) => {
-                      const next = [...experience];
-                      next[i] = { ...row, start_date: e.target.value };
-                      setExperience(next);
-                    }}
-                  />
-                </label>
-                <label className="block text-sm font-medium">
-                  End date
-                  <input
-                    type="date"
-                    className={field}
-                    disabled={row.is_current}
-                    value={row.end_date}
-                    onChange={(e) => {
-                      const next = [...experience];
-                      next[i] = { ...row, end_date: e.target.value };
-                      setExperience(next);
-                    }}
-                  />
-                </label>
-                <label className="flex items-center gap-2 text-sm sm:col-span-2">
-                  <input
-                    type="checkbox"
-                    checked={row.is_current}
-                    onChange={(e) => {
-                      const next = [...experience];
-                      next[i] = { ...row, is_current: e.target.checked };
-                      setExperience(next);
-                    }}
-                  />
-                  I currently work here
-                </label>
-                <label className="block text-sm font-medium sm:col-span-2">
-                  Description
-                  <textarea
-                    rows={3}
-                    className={field}
-                    value={row.description}
-                    onChange={(e) => {
-                      const next = [...experience];
-                      next[i] = { ...row, description: e.target.value };
-                      setExperience(next);
-                    }}
-                    placeholder="What you worked on"
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="text-left text-xs font-semibold text-muted hover:text-ink sm:col-span-2"
-                  onClick={() => setExperience(experience.filter((_, j) => j !== i))}
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
-            <button
-              type="button"
-              className="text-sm font-semibold text-brand"
-              onClick={() =>
-                setExperience([
-                  ...experience,
-                  {
-                    company_name: "",
-                    job_title: "",
-                    start_date: "",
-                    end_date: "",
-                    is_current: false,
-                    description: "",
-                  },
-                ])
-              }
-            >
-              + Add experience
-            </button>
+            <ExperienceList rows={experience} onChange={setExperience} />
           </Section>
 
           <Section title="Education" hint="What schools have you studied at?">
-            {education.map((row, i) => (
-              <div key={i} className="border border-line p-4">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="block text-sm font-medium sm:col-span-2">
-                    School
-                    <input
-                      className={field}
-                      value={row.institution_name}
-                      onChange={(e) => {
-                        const next = [...education];
-                        next[i] = { ...row, institution_name: e.target.value };
-                        setEducation(next);
-                      }}
-                    />
-                  </label>
-                  <label className="block text-sm font-medium">
-                    Degree
-                    <input
-                      className={field}
-                      value={row.degree}
-                      onChange={(e) => {
-                        const next = [...education];
-                        next[i] = { ...row, degree: e.target.value };
-                        setEducation(next);
-                      }}
-                      placeholder="BEng"
-                    />
-                  </label>
-                  <label className="block text-sm font-medium">
-                    Field of study
-                    <input
-                      className={field}
-                      value={row.field_of_study}
-                      onChange={(e) => {
-                        const next = [...education];
-                        next[i] = { ...row, field_of_study: e.target.value };
-                        setEducation(next);
-                      }}
-                      placeholder="Computer Science"
-                    />
-                  </label>
-                  <label className="block text-sm font-medium">
-                    Start year
-                    <input
-                      className={field}
-                      value={row.start_year}
-                      onChange={(e) => {
-                        const next = [...education];
-                        next[i] = { ...row, start_year: e.target.value };
-                        setEducation(next);
-                      }}
-                      placeholder="2025"
-                    />
-                  </label>
-                  <label className="block text-sm font-medium">
-                    Graduation year
-                    <input
-                      className={field}
-                      value={row.end_year}
-                      onChange={(e) => {
-                        const next = [...education];
-                        next[i] = { ...row, end_year: e.target.value };
-                        setEducation(next);
-                      }}
-                      placeholder="2029"
-                    />
-                  </label>
-                </div>
-                <button
-                  type="button"
-                  className="mt-3 text-xs font-semibold text-muted hover:text-ink"
-                  onClick={() => setEducation(education.filter((_, j) => j !== i))}
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
-            <button
-              type="button"
-              className="text-sm font-semibold text-brand"
-              onClick={() =>
-                setEducation([
-                  ...education,
-                  {
-                    institution_name: "",
-                    degree: "",
-                    field_of_study: "",
-                    start_year: "",
-                    end_year: "",
-                  },
-                ])
-              }
-            >
-              + Add education
-            </button>
+            <EducationList rows={education} onChange={setEducation} />
           </Section>
 
           <Section
@@ -731,58 +575,9 @@ export default function CandidateProfilePage() {
 
           <Section
             title="Certifications"
-            hint="Courses and certificates recruiters can verify."
+            hint="Named credentials (AWS, Coursera, etc.) — upload the file for each."
           >
-            <div className="flex flex-wrap gap-2">
-              {certifications.map((c) => (
-                <span
-                  key={c}
-                  className="inline-flex items-center gap-1 rounded-md bg-soft px-2.5 py-1 text-xs"
-                >
-                  {c}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setCertifications(certifications.filter((x) => x !== c))
-                    }
-                    aria-label={`Remove ${c}`}
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <input
-                className={inputClass}
-                value={certDraft}
-                onChange={(e) => setCertDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    const name = certDraft.trim();
-                    if (name && !certifications.includes(name)) {
-                      setCertifications([...certifications, name]);
-                    }
-                    setCertDraft("");
-                  }
-                }}
-                placeholder="e.g. AWS Cloud Practitioner"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  const name = certDraft.trim();
-                  if (name && !certifications.includes(name)) {
-                    setCertifications([...certifications, name]);
-                  }
-                  setCertDraft("");
-                }}
-                className="shrink-0 rounded-md border border-line px-3 text-sm font-semibold hover:bg-soft"
-              >
-                Add
-              </button>
-            </div>
+            <CertificationList rows={certRows} onChange={setCertRows} />
           </Section>
         </>
       ) : (
@@ -812,6 +607,13 @@ export default function CandidateProfilePage() {
           <p className="text-xs text-muted">Save to upload a new primary resume.</p>
         </Section>
       )}
+
+      <Section
+        title="Delete account"
+        hint="We email a one-time code before anything is removed."
+      >
+        <DeleteAccountPanel email={accountEmail} />
+      </Section>
     </form>
   );
 }
