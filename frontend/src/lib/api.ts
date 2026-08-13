@@ -1,10 +1,22 @@
 import { authFetch } from "@/lib/auth/jwt";
 
-/** Empty = same origin (Next.js proxies /api to the Express backend). */
+/** Browser: empty = same origin (Next.js rewrites /api → Express). */
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(
   /\/$/,
   "",
 );
+
+/** Server Route Handlers cannot fetch relative `/api/...` URLs. */
+export function getApiUrl() {
+  const explicit = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
+  if (explicit) return explicit;
+  const internal = (process.env.API_INTERNAL_URL || "").replace(/\/$/, "");
+  if (internal) return internal;
+  if (typeof window === "undefined" && process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+  return "";
+}
 
 async function parse<T>(res: Response): Promise<T> {
   const data = (await res.json().catch(() => ({}))) as { error?: string } & T;
@@ -31,7 +43,8 @@ export async function apiWithToken<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
+  const base = getApiUrl();
+  const res = await fetch(`${base}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",

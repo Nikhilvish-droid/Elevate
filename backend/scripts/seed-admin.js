@@ -9,6 +9,7 @@
  */
 require("dotenv").config();
 const { createClient } = require("@supabase/supabase-js");
+const ws = require("ws");
 
 async function main() {
   const email = String(process.argv[2] || process.env.ADMIN_EMAIL || "")
@@ -29,6 +30,7 @@ async function main() {
   }
 
   const admin = createClient(url, key, {
+    realtime: { transport: ws },
     auth: { persistSession: false, autoRefreshToken: false },
   });
 

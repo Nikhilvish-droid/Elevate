@@ -77,10 +77,13 @@ function AuthForm() {
     setBusy(true);
     const supabase = createClient();
     const origin = window.location.origin;
+    const callbackNext = isLogin
+      ? `${origin}/auth/callback`
+      : `${origin}/auth/callback?next=${encodeURIComponent(onboardingPath())}`;
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(onboardingPath())}`,
+        redirectTo: callbackNext,
       },
     });
     if (oauthError) {

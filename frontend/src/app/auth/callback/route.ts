@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   const code = searchParams.get("code");
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
-  const next = searchParams.get("next") ?? "/onboarding";
+  const next = searchParams.get("next");
 
   const supabase = await createClient();
 
@@ -27,10 +27,13 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/auth?tab=login&confirmed=1`);
   }
 
-  const destination = next.startsWith("/") ? next : "/onboarding";
+  const destination = next && next.startsWith("/") ? next : null;
 
   // Password recovery must land on the reset form, not a dashboard.
-  if (destination === "/auth/reset" || destination.startsWith("/auth/reset?")) {
+  if (
+    destination === "/auth/reset" ||
+    (destination && destination.startsWith("/auth/reset?"))
+  ) {
     return NextResponse.redirect(`${origin}${destination}`);
   }
 
@@ -40,8 +43,13 @@ export async function GET(request: Request) {
       "/api/auth/sync",
       { method: "POST" },
     );
-    return NextResponse.redirect(`${origin}${afterAuthPath(profile, destination)}`);
+    return NextResponse.redirect(
+      `${origin}${afterAuthPath(profile, destination)}`,
+    );
   } catch {
-    return NextResponse.redirect(`${origin}${destination}`);
+    // Don't send existing users to "create account" if the API is cold/down.
+    const continueUrl = new URL("/auth/continue", origin);
+    if (destination) continueUrl.searchParams.set("next", destination);
+    return NextResponse.redirect(continueUrl);
   }
 }

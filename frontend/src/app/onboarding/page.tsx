@@ -38,6 +38,7 @@ import {
   isOnboarded,
   saveCandidateOnboarding,
   saveCompanyOnboarding,
+  syncAuthUser,
   teamFromRoleName,
   teamLabel,
 } from "@/lib/profile";
@@ -96,6 +97,8 @@ function Onboarding() {
     null,
   );
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [loadTries, setLoadTries] = useState(0);
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
   const [email, setEmail] = useState("");
@@ -151,12 +154,28 @@ function Onboarding() {
         router.replace("/auth?tab=login");
         return;
       }
-      const profile = await getProfile().catch(() => null);
+      let profile = await getProfile().catch(() => null);
+      if (!profile) {
+        try {
+          profile = await syncAuthUser();
+        } catch (err) {
+          if (!cancelled) {
+            setLoadError(
+              err instanceof Error
+                ? err.message
+                : "Could not load your existing profile. The API may still be waking up.",
+            );
+            setReady(true);
+          }
+          return;
+        }
+      }
       if (profile && isOnboarded(profile)) {
         router.replace(homeFor(profile));
         return;
       }
       if (!cancelled) {
+        setLoadError("");
         setEmail(user.email ?? "");
         const name =
           user.user_metadata?.full_name ||
@@ -175,7 +194,7 @@ function Onboarding() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [router, loadTries]);
 
   useEffect(() => {
     if (companyPath !== "join-search") return;
@@ -379,6 +398,33 @@ function Onboarding() {
     return (
       <AuthLayout title="Almost there">
         <div className="h-32 animate-pulse rounded-md bg-soft" />
+      </AuthLayout>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <AuthLayout
+        title="Could not load your account"
+        subtitle="You are signed in. This is not a new account — the API did not return your profile."
+      >
+        <p className="text-sm text-red-600" role="alert">
+          {loadError}
+        </p>
+        <p className="mt-3 text-sm text-muted">
+          If the backend just woke up on Render, wait about 30 seconds and retry.
+        </p>
+        <button
+          type="button"
+          className={`mt-6 ${btnPrimary}`}
+          onClick={() => {
+            setReady(false);
+            setLoadError("");
+            setLoadTries((n) => n + 1);
+          }}
+        >
+          Retry
+        </button>
       </AuthLayout>
     );
   }

@@ -87,7 +87,11 @@ export function DashShell({
         return;
       }
 
-      if (!profile || !isOnboarded(profile) || !profile.company_id) {
+      if (!profile) {
+        router.replace("/auth?tab=login");
+        return;
+      }
+      if (!isOnboarded(profile) || !profile.company_id) {
         router.replace("/onboarding?hint=company");
         return;
       }
