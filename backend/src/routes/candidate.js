@@ -3,6 +3,7 @@ const { unwrap, splitName, asyncHandler, fail } = require("../lib/helpers");
 const { getCandidateId } = require("../lib/users");
 const { loadFullProfile } = require("../lib/candidateProfile");
 const { replaceEducation, replaceExperience, replaceCertifications } = require("../lib/candidateSave");
+const { supabaseAdmin } = require("../supabase");
 
 const router = express.Router();
 
@@ -268,6 +269,49 @@ router.patch(
         .update({ status: "rejected", approved_for_offer: false })
         .eq("candidate_id", candidateId)
         .eq("job_id", offer.job_id);
+    }
+
+    try {
+      const db = supabaseAdmin() || req.supabase;
+      const { data: job } = await db
+        .from("jobs")
+        .select("id, title, company_id")
+        .eq("id", offer.job_id)
+        .maybeSingle();
+      if (job?.company_id) {
+        const { data: members } = await db
+          .from("company_members")
+          .select("user_id, role")
+          .eq("company_id", job.company_id)
+          .in("role", ["founder", "recruiter", "hiring_manager"]);
+        const { data: cand } = await db
+          .from("candidates")
+          .select("first_name, last_name")
+          .eq("id", candidateId)
+          .maybeSingle();
+        const name =
+          [cand?.first_name, cand?.last_name].filter(Boolean).join(" ").trim() ||
+          "Candidate";
+        const title = accept
+          ? `Offer accepted · ${job.title}`
+          : `Offer declined · ${job.title}`;
+        const message = accept
+          ? `${name} accepted the offer for ${job.title}.`
+          : `${name} declined the offer for ${job.title}.`;
+        for (const member of members || []) {
+          await db.from("notifications").insert({
+            user_id: member.user_id,
+            notification_type: "offer",
+            title,
+            message,
+            entity_type: "offer",
+            entity_id: offerId,
+            is_read: false,
+          });
+        }
+      }
+    } catch {
+      // Candidate response still succeeds if company notify fails.
     }
 
     res.json({ ok: true });

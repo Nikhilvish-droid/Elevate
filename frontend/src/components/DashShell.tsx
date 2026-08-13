@@ -29,6 +29,7 @@ type NavItem = {
   icon: ReactNode;
   onClick?: () => void;
   active?: boolean;
+  unread?: boolean;
 };
 
 export function DashShell({
@@ -37,7 +38,7 @@ export function DashShell({
   nav,
   children,
 }: {
-  role: "candidate" | "company";
+  role: "candidate" | "company" | "admin";
   teamRole?: TeamRole;
   nav: NavItem[];
   children: ReactNode;
@@ -59,6 +60,19 @@ export function DashShell({
       }
       const profile = await getProfile();
       if (cancelled) return;
+
+      if (role === "admin") {
+        if (!profile) {
+          router.replace("/auth?tab=login");
+          return;
+        }
+        if (profile.role !== "admin") {
+          router.replace(homeFor(profile));
+          return;
+        }
+        setLocal(profile);
+        return;
+      }
 
       if (role === "candidate") {
         if (!profile) {
@@ -156,9 +170,11 @@ export function DashShell({
     "User";
 
   const badge =
-    role === "candidate"
-      ? display
-      : `${user.company_name ?? "Company"} · ${teamLabel(user.team_role ?? teamRole)}`;
+    role === "admin"
+      ? "Platform Admin"
+      : role === "candidate"
+        ? display
+        : `${user.company_name ?? "Company"} · ${teamLabel(user.team_role ?? teamRole)}`;
 
   const navClass = (active?: boolean) =>
     `flex flex-col items-center gap-1 rounded-md px-2 py-2.5 text-[10px] font-medium hover:bg-soft hover:text-ink ${
@@ -176,15 +192,26 @@ export function DashShell({
           E
         </Link>
         <nav className="flex flex-1 flex-col gap-1 overflow-y-auto">
-          {nav.map((item) =>
-            item.onClick ? (
+          {nav.map((item) => {
+            const icon = (
+              <span className="relative inline-flex">
+                {item.icon}
+                {item.unread ? (
+                  <span
+                    className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-orange-500"
+                    aria-label="New messages"
+                  />
+                ) : null}
+              </span>
+            );
+            return item.onClick ? (
               <button
                 key={item.label}
                 type="button"
                 onClick={item.onClick}
                 className={navClass(item.active)}
               >
-                {item.icon}
+                {icon}
                 {item.label}
               </button>
             ) : (
@@ -194,11 +221,11 @@ export function DashShell({
                 prefetch
                 className={navClass(item.active)}
               >
-                {item.icon}
+                {icon}
                 {item.label}
               </Link>
-            ),
-          )}
+            );
+          })}
         </nav>
       </aside>
 
@@ -289,9 +316,11 @@ export function DashShell({
                   <p className="text-xs text-muted">{user.email}</p>
                 </div>
                 <p className="px-3 py-2 text-xs text-muted">
-                  {role === "company"
-                    ? "Access is limited to your approved company."
-                    : "Candidate workspace"}
+                  {role === "admin"
+                    ? "Platform control plane — all companies."
+                    : role === "company"
+                      ? "Access is limited to your approved company."
+                      : "Candidate workspace"}
                 </p>
                 <button
                   type="button"

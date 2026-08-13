@@ -410,6 +410,9 @@ export async function listMyNotifications() {
 
 export async function markNotificationRead(id: number) {
   await api(`/api/candidate/notifications/${id}`, { method: "PATCH" });
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("elevate-inbox"));
+  }
 }
 
 export type PublicCandidate = Omit<

@@ -77,7 +77,22 @@ async function generateActionLink({ type, email, password, redirectTo }) {
     if (!error && data?.properties?.action_link) {
       return data.properties.action_link;
     }
-    // User already created by client signUp — fall back to magic link.
+
+    const already = /already been registered|already registered|already exists/i.test(
+      error?.message || "",
+    );
+    if (already && typeof admin.auth.admin.getUserByEmail === "function") {
+      const lookup = await admin.auth.admin.getUserByEmail(email);
+      if (lookup.data?.user?.email_confirmed_at) {
+        const err = new Error(
+          "An account with this email already exists. Log in or reset your password.",
+        );
+        err.status = 409;
+        throw err;
+      }
+    }
+
+    // Unconfirmed leftover account — resend a magic link instead of Supabase SMTP.
     const magic = await admin.auth.admin.generateLink({
       type: "magiclink",
       email,
@@ -147,6 +162,7 @@ async function sendRecoveryEmail({ email, redirectTo }) {
 
 module.exports = {
   mailConfigured,
+  sendResendEmail,
   sendConfirmationEmail,
   sendRecoveryEmail,
   frontendOrigin,

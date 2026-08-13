@@ -11,6 +11,7 @@ const profileRoutes = require("./src/routes/profiles");
 const companiesRoutes = require("./src/routes/companies");
 const companyRoutes = require("./src/routes/company");
 const authEmailRoutes = require("./src/routes/authEmail");
+const adminRoutes = require("./src/routes/admin");
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -40,6 +41,7 @@ app.use("/api/company-requests", requireAuth, companyRoutes.requests);
 app.use("/api/company", requireAuth, companyRoutes.admin);
 app.use("/api/candidate", requireAuth, candidateRoutes);
 app.use("/api/jobs", requireAuth, jobRoutes);
+app.use("/api/admin", requireAuth, adminRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: `No route ${req.method} ${req.path}` });
@@ -50,6 +52,6 @@ app.use((err, _req, res, _next) => {
   res.status(status).json({ error: err.message || "Request failed" });
 });
 
-app.listen(port, () => {
+app.listen(port, "0.0.0.0", () => {
   console.log(`Elevate backend running on http://localhost:${port}`);
 });

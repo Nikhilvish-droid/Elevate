@@ -6,7 +6,7 @@ export type AppRole =
   | "admin";
 
 /** UI role grouping used by dashboards */
-export type Role = "candidate" | "company";
+export type Role = "candidate" | "company" | "admin";
 export type TeamRole = "founder" | "recruiter" | "manager" | "interviewer";
 export type MembershipRole =
   | "founder"
@@ -73,6 +73,7 @@ export function candidateIdFromSlug(slug: string) {
 export function isOnboarded(
   user: Pick<AppUser, "role" | "team_role" | "candidate_id" | "company_id">,
 ) {
+  if (user.role === "admin") return true;
   if (user.candidate_id) return true;
   if (user.company_id) return true;
   if (user.role === "candidate") return Boolean(user.candidate_id);
@@ -87,6 +88,7 @@ export function homeFor(
     "role" | "team_role" | "membership_role" | "full_name" | "candidate_id" | "id"
   >,
 ) {
+  if (user.role === "admin") return "/admin";
   if (user.role === "candidate" || user.candidate_id) return "/candidate";
   if (user.membership_role === "founder" || user.team_role === "founder") {
     return "/recruiter";

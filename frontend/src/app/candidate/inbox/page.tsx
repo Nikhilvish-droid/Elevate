@@ -67,11 +67,19 @@ export default function InboxPage() {
                 }}
               >
                 <div className="flex flex-wrap items-center gap-2">
+                  {!n.is_read ? (
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full bg-orange-500"
+                      aria-label="Unread"
+                    />
+                  ) : (
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-transparent" />
+                  )}
                   <span className="rounded-md border border-line px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted">
                     {typeLabel(n.notification_type)}
                   </span>
                   {!n.is_read ? (
-                    <span className="text-[10px] font-semibold text-brand">
+                    <span className="text-[10px] font-semibold text-orange-600">
                       New
                     </span>
                   ) : null}

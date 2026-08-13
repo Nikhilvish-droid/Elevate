@@ -2,13 +2,17 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { ApplicationMessageThread } from "@/components/company/ApplicationMessageThread";
+import { CandidateMessageModal } from "@/components/company/CandidateMessageModal";
 import {
   normalizeAppStage,
   stageLabel,
 } from "@/lib/candidate";
+import { getCompanyWorkspace } from "@/lib/company";
 import {
   formatEmployment,
   formatWorkMode,
+  getApplicationResume,
   jobStatusLabel,
   listCompanyJobs,
   listJobApplicants,
@@ -18,11 +22,12 @@ import {
   type CompanyJob,
   type JobApplicant,
 } from "@/lib/companyJobs";
+import type { MessageKind } from "@/lib/candidateMessages";
 import { profileSlug } from "@/lib/user";
 
 type Props = {
   onSchedule?: () => void;
-  onEmail?: () => void;
+  onEmail?: (applicationId?: number) => void;
 };
 
 const STAGE_OPTIONS = [
@@ -81,38 +86,64 @@ function SkillList({
 }
 
 function AiScreeningPanel({ screening }: { screening: AiScreening }) {
-  const score =
-    screening.match_percentage != null
-      ? Math.round(screening.match_percentage)
-      : null;
   const questionCount =
     (screening.questions?.easy?.length || 0) +
     (screening.questions?.medium?.length || 0) +
     (screening.questions?.hard?.length || 0);
+  const hasBreakdown =
+    screening.resume_score != null ||
+    screening.fit_score != null ||
+    screening.why_score != null;
 
   return (
     <div className="mt-4 space-y-4 border-t border-line pt-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="font-semibold">AI resume screening</p>
-          <p className="mt-1 text-sm text-muted">
-            {screening.recommendation ||
-              "Compared this resume against the job description."}
+      <div>
+        <p className="font-semibold">AI resume screening</p>
+        <p className="mt-1 text-sm text-muted">
+          {screening.recommendation ||
+            "Score out of 100: 90% resume, 5% how they fit, 5% why this role."}
+        </p>
+        {screening.verdict ? (
+          <p className="mt-1 text-xs font-semibold capitalize text-muted">
+            Hint: {screening.verdict}
           </p>
-        </div>
-        <div className="text-right">
-          {score != null ? (
-            <p className="font-display text-2xl font-bold text-brand">
-              {score}%
-            </p>
-          ) : null}
-          {screening.verdict ? (
-            <p className="mt-0.5 text-xs font-semibold capitalize text-muted">
-              Hint: {screening.verdict}
-            </p>
-          ) : null}
-        </div>
+        ) : null}
       </div>
+
+      {hasBreakdown ? (
+        <ul className="grid gap-2 text-sm sm:grid-cols-3">
+          <li className="rounded-md border border-line bg-soft/40 px-3 py-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+              Resume ({screening.weights?.resume ?? 90}%)
+            </p>
+            <p className="mt-0.5 font-semibold">
+              {screening.resume_score != null
+                ? `${Math.round(screening.resume_score)}/100`
+                : "—"}
+            </p>
+          </li>
+          <li className="rounded-md border border-line bg-soft/40 px-3 py-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+              How they fit ({screening.weights?.fit ?? 5}%)
+            </p>
+            <p className="mt-0.5 font-semibold">
+              {screening.fit_score != null
+                ? `${Math.round(screening.fit_score)}/100`
+                : "—"}
+            </p>
+          </li>
+          <li className="rounded-md border border-line bg-soft/40 px-3 py-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+              Why this role ({screening.weights?.why ?? 5}%)
+            </p>
+            <p className="mt-0.5 font-semibold">
+              {screening.why_score != null
+                ? `${Math.round(screening.why_score)}/100`
+                : "—"}
+            </p>
+          </li>
+        </ul>
+      ) : null}
 
       <div className="grid gap-4 sm:grid-cols-3">
         <SkillList
@@ -141,6 +172,20 @@ function AiScreeningPanel({ screening }: { screening: AiScreening }) {
         </p>
       ) : null}
 
+      {screening.summary ? (
+        <div className="rounded-md border border-line bg-soft/40 px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+            AI resume summary
+          </p>
+          <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
+            {screening.summary}
+          </p>
+          <p className="mt-2 text-xs text-muted">
+            Written so a hiring manager can decide without opening the file.
+          </p>
+        </div>
+      ) : null}
+
       {questionCount > 0 ? (
         <p className="text-xs text-muted">
           Interview question bank ready ({questionCount} questions across
@@ -163,8 +208,8 @@ function AiScreeningOverlay({ name }: { name: string }) {
         <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-line border-t-brand" />
         <p className="mt-5 font-display text-lg font-bold">AI screening…</p>
         <p className="mt-2 text-sm text-muted">
-          Reading {name}&apos;s resume and matching it to the job description.
-          This can take a few seconds.
+          Reading {name}&apos;s resume plus how they fit and why this role,
+          then scoring out of 100. This can take a few seconds.
         </p>
       </div>
     </div>
@@ -190,18 +235,37 @@ function ApplicantCard({
   onShortlist: () => void;
   onScreen: () => void;
   onSchedule?: () => void;
-  onEmail?: () => void;
+  onEmail?: (applicationId?: number) => void;
 }) {
-  const [open, setOpen] = useState(Boolean(person.ai_screening));
+  const [open, setOpen] = useState(false);
+  const [resumeBusy, setResumeBusy] = useState(false);
+  const [resumeError, setResumeError] = useState("");
   const shortlisted = String(person.status).toLowerCase() === "shortlisted";
   const hasAnswers = Boolean(
     person.how_you_fit || person.why_role || person.cover_letter,
   );
   const screening = person.ai_screening;
+  const hasResume = Boolean(person.resume?.id || person.resume?.file_url);
+  const canViewDetails = Boolean(hasAnswers || screening || hasResume);
 
-  useEffect(() => {
-    if (screening) setOpen(true);
-  }, [screening]);
+  async function openResume() {
+    setResumeError("");
+    if (person.resume?.file_url?.startsWith("http")) {
+      window.open(person.resume.file_url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    setResumeBusy(true);
+    try {
+      const data = await getApplicationResume(person.application_id);
+      window.open(data.url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      setResumeError(
+        err instanceof Error ? err.message : "Could not open resume.",
+      );
+    } finally {
+      setResumeBusy(false);
+    }
+  }
 
   return (
     <li className="px-5 py-5">
@@ -240,7 +304,7 @@ function ApplicantCard({
             </p>
             {person.resume?.file_name ? (
               <p className="mt-1 text-xs text-muted">
-                Resume: {person.resume.file_name}
+                Resume on file: {person.resume.file_name}
               </p>
             ) : null}
             {screening?.strong_skills?.length ? (
@@ -268,14 +332,6 @@ function ApplicantCard({
               <button
                 type="button"
                 disabled={busy || screeningBusy}
-                onClick={onShortlist}
-                className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold hover:bg-soft disabled:opacity-60"
-              >
-                {shortlisted ? "Shortlisted" : "Shortlist"}
-              </button>
-              <button
-                type="button"
-                disabled={busy || screeningBusy}
                 onClick={onScreen}
                 className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold hover:bg-soft disabled:opacity-60"
               >
@@ -294,10 +350,10 @@ function ApplicantCard({
               </button>
               <button
                 type="button"
-                onClick={onEmail}
+                onClick={() => onEmail?.(person.application_id)}
                 className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold hover:bg-soft"
               >
-                Email
+                Message
               </button>
               <Link
                 href={`/u/${profileSlug(person.full_name)}-${person.candidate_id}`}
@@ -305,29 +361,86 @@ function ApplicantCard({
               >
                 Profile
               </Link>
-              {hasAnswers || screening ? (
+              {hasResume ? (
                 <button
                   type="button"
-                  onClick={() => setOpen((v) => !v)}
-                  className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold hover:bg-soft"
+                  disabled={resumeBusy}
+                  onClick={openResume}
+                  className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold hover:bg-soft disabled:opacity-60"
                 >
-                  {open ? "Hide details" : "View details"}
+                  {resumeBusy ? "Opening…" : "View resume"}
                 </button>
               ) : null}
             </div>
+            {resumeError ? (
+              <p className="mt-2 text-xs text-red-600">{resumeError}</p>
+            ) : null}
           </div>
         </div>
-        <span className="text-sm font-semibold text-brand">
-          {person.match_score != null
-            ? `${Math.round(person.match_score)}% match`
-            : "—"}
-        </span>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <p className="font-display text-2xl font-bold leading-none text-brand">
+            {person.match_score != null
+              ? `${Math.round(person.match_score)}/100`
+              : "—"}
+          </p>
+          <p className="text-xs font-medium text-muted">Match score</p>
+          <button
+            type="button"
+            disabled={busy || screeningBusy}
+            onClick={onShortlist}
+            className={`min-w-[8.5rem] rounded-md px-4 py-2.5 text-sm font-semibold disabled:opacity-60 ${
+              shortlisted
+                ? "bg-brand text-white hover:bg-brand-deep"
+                : "border-2 border-brand bg-brand/10 text-brand hover:bg-brand hover:text-white"
+            }`}
+          >
+            {shortlisted ? "Shortlisted" : "Shortlist"}
+          </button>
+        </div>
       </div>
+
+      {canViewDetails ? (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className={`mt-3 inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-semibold transition ${
+            open
+              ? "border border-line bg-soft hover:bg-elevated"
+              : "bg-brand text-white hover:bg-brand-deep"
+          }`}
+        >
+          {open ? "Hide details" : "View details"}
+          <span className="text-xs leading-none" aria-hidden>
+            {open ? "▴" : "▾"}
+          </span>
+        </button>
+      ) : null}
 
       {open && screening ? <AiScreeningPanel screening={screening} /> : null}
 
       {open ? (
         <div className="mt-4 space-y-3 border-t border-line pt-4 text-sm">
+          {hasResume ? (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="font-semibold">Resume</p>
+                <p className="mt-0.5 text-muted">
+                  {person.resume?.file_name || "Uploaded resume"}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={resumeBusy}
+                onClick={openResume}
+                className="rounded-md border border-line px-3 py-1.5 text-xs font-semibold hover:bg-soft disabled:opacity-60"
+              >
+                {resumeBusy ? "Opening…" : "Open resume"}
+              </button>
+            </div>
+          ) : (
+            <p className="text-muted">No resume on this application.</p>
+          )}
           {person.how_you_fit ? (
             <div>
               <p className="font-semibold">How they fit</p>
@@ -352,6 +465,7 @@ function ApplicantCard({
               </p>
             </div>
           ) : null}
+          <ApplicationMessageThread applicationId={person.application_id} />
         </div>
       ) : null}
     </li>
@@ -368,6 +482,12 @@ export function AppsPanel({ onSchedule, onEmail }: Props) {
   const [appsLoading, setAppsLoading] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [screeningId, setScreeningId] = useState<number | null>(null);
+  const [companyName, setCompanyName] = useState("Company");
+  const [pendingMsg, setPendingMsg] = useState<{
+    person: JobApplicant;
+    kind: Extract<MessageKind, "shortlisted" | "rejected">;
+    nextStatus: string;
+  } | null>(null);
 
   const screeningPerson =
     screeningId == null
@@ -387,6 +507,9 @@ export function AppsPanel({ onSchedule, onEmail }: Props) {
 
   useEffect(() => {
     loadJobs();
+    getCompanyWorkspace()
+      .then((ws) => setCompanyName(ws.company.name || "Company"))
+      .catch(() => {});
   }, [loadJobs]);
 
   async function openApplicants(job: CompanyJob) {
@@ -406,7 +529,7 @@ export function AppsPanel({ onSchedule, onEmail }: Props) {
     }
   }
 
-  async function setStage(person: JobApplicant, status: string) {
+  async function applyStage(person: JobApplicant, status: string) {
     setBusyId(person.application_id);
     setError("");
     try {
@@ -430,12 +553,27 @@ export function AppsPanel({ onSchedule, onEmail }: Props) {
     }
   }
 
+  async function setStage(person: JobApplicant, status: string) {
+    if (status === "rejected") {
+      setPendingMsg({ person, kind: "rejected", nextStatus: "rejected" });
+      return;
+    }
+    if (
+      status === "shortlisted" &&
+      String(person.status).toLowerCase() !== "shortlisted"
+    ) {
+      setPendingMsg({ person, kind: "shortlisted", nextStatus: "shortlisted" });
+      return;
+    }
+    await applyStage(person, status);
+  }
+
   async function shortlist(person: JobApplicant) {
-    const next =
-      String(person.status).toLowerCase() === "shortlisted"
-        ? "applied"
-        : "shortlisted";
-    await setStage(person, next);
+    if (String(person.status).toLowerCase() === "shortlisted") {
+      await applyStage(person, "applied");
+      return;
+    }
+    setPendingMsg({ person, kind: "shortlisted", nextStatus: "shortlisted" });
   }
 
   async function screen(person: JobApplicant) {
@@ -464,11 +602,37 @@ export function AppsPanel({ onSchedule, onEmail }: Props) {
     }
   }
 
+  async function finishPending(sendDone: boolean) {
+    if (!pendingMsg) return;
+    await applyStage(pendingMsg.person, pendingMsg.nextStatus);
+    setPendingMsg(null);
+    if (sendDone) {
+      setError("");
+    }
+  }
+
   if (selectedJobId != null) {
     return (
       <section>
         {screeningPerson ? (
           <AiScreeningOverlay name={screeningPerson.full_name} />
+        ) : null}
+        {pendingMsg ? (
+          <CandidateMessageModal
+            open
+            applicationId={pendingMsg.person.application_id}
+            candidateName={pendingMsg.person.full_name}
+            kind={pendingMsg.kind}
+            vars={{
+              name: pendingMsg.person.full_name,
+              job: jobTitle,
+              company: companyName,
+            }}
+            busy={busyId === pendingMsg.person.application_id}
+            onClose={() => setPendingMsg(null)}
+            onSent={() => finishPending(true)}
+            onSkip={() => finishPending(false)}
+          />
         ) : null}
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>

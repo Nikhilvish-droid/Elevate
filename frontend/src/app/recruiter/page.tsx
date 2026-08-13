@@ -14,6 +14,7 @@ import {
 } from "@/components/DashShell";
 import { AppsPanel } from "@/components/company/AppsPanel";
 import { CompanyDashboardPanel } from "@/components/company/CompanyDashboard";
+import { CompanyInboxNote } from "@/components/company/CompanyInboxNote";
 import { HomeCandidatesPanel } from "@/components/company/HomeCandidatesPanel";
 import {
   EmailPanel,
@@ -80,6 +81,9 @@ export default function RecruiterPage() {
   const [reviewing, setReviewing] = useState<number | null>(null);
   const [openJobCreate, setOpenJobCreate] = useState(false);
   const [hiringActive, setHiringActive] = useState(true);
+  const [emailApplicationId, setEmailApplicationId] = useState<number | null>(
+    null,
+  );
 
   const loadTeam = useCallback(async () => {
     try {
@@ -165,7 +169,10 @@ export default function RecruiterPage() {
         label: item.label,
         icon: item.icon,
         active: view === item.id,
-        onClick: () => setView(item.id),
+        onClick: () => {
+          if (item.id === "email") setEmailApplicationId(null);
+          setView(item.id);
+        },
       }))}
     >
       <div className="mx-auto max-w-3xl">
@@ -190,6 +197,7 @@ export default function RecruiterPage() {
               onProfiles={() => setView("profiles")}
               onDashboard={() => setView("dashboard")}
             />
+            <CompanyInboxNote />
             <HomeCandidatesPanel />
           </>
         ) : null}
@@ -218,21 +226,29 @@ export default function RecruiterPage() {
         {view === "apps" ? (
           <AppsPanel
             onSchedule={() => setView("interviews")}
-            onEmail={() => setView("email")}
+            onEmail={(applicationId) => {
+              setEmailApplicationId(applicationId ?? null);
+              setView("email");
+            }}
           />
         ) : null}
 
         {view === "shortlist" ? (
           <ShortlistPanel
             onSchedule={() => setView("interviews")}
-            onEmail={() => setView("email")}
+            onEmail={(applicationId) => {
+              setEmailApplicationId(applicationId ?? null);
+              setView("email");
+            }}
             onOffer={() => setView("offers")}
           />
         ) : null}
 
         {view === "interviews" ? <InterviewPanel /> : null}
 
-        {view === "email" ? <EmailPanel /> : null}
+        {view === "email" ? (
+          <EmailPanel initialApplicationId={emailApplicationId} />
+        ) : null}
 
         {view === "team" ? (
           <TeamPanel

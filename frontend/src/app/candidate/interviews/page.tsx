@@ -25,7 +25,7 @@ function jobTitleOf(row: InterviewRow) {
 
 function isPast(row: InterviewRow) {
   const status = String(row.status || "").toLowerCase();
-  if (["completed", "done", "cancelled", "no_show"].includes(status)) return true;
+  if (["completed", "ended", "done", "cancelled", "no_show"].includes(status)) return true;
   return new Date(row.scheduled_at).getTime() < Date.now() - 30 * 60 * 1000;
 }
 

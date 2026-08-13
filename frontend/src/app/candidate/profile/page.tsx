@@ -16,6 +16,7 @@ import {
 } from "@/components/candidate/CandidateFormSections";
 import {
   getCandidateFull,
+  listMyNotifications,
   saveCandidateProfile,
   type CandidateFull,
 } from "@/lib/candidate";
@@ -92,6 +93,7 @@ export default function CandidateProfilePage() {
   const [resumes, setResumes] = useState<CandidateFull["resumes"]>([]);
   const [shareUrl, setShareUrl] = useState("");
   const [copied, setCopied] = useState(false);
+  const [unreadMessages, setUnreadMessages] = useState(0);
   const [accountEmail, setAccountEmail] = useState<string | null>(null);
 
   function applyFull(c: CandidateFull) {
@@ -171,6 +173,9 @@ export default function CandidateProfilePage() {
         setAccountEmail(p.email);
       }
     });
+    listMyNotifications()
+      .then((notes) => setUnreadMessages(notes.filter((n) => !n.is_read).length))
+      .catch(() => setUnreadMessages(0));
   }, []);
 
   function addSkill() {
@@ -262,6 +267,21 @@ export default function CandidateProfilePage() {
 
   return (
     <form onSubmit={onSave} className="mx-auto max-w-5xl pb-16">
+      {unreadMessages > 0 ? (
+        <Link
+          href="/candidate/inbox"
+          className="mb-4 flex items-center gap-3 border border-line bg-elevated px-4 py-3 text-sm hover:bg-soft"
+        >
+          <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-orange-500" />
+          <span>
+            You have {unreadMessages} new message
+            {unreadMessages === 1 ? "" : "s"} in Inbox.
+          </span>
+          <span className="ml-auto text-xs font-semibold text-brand">
+            Open Inbox →
+          </span>
+        </Link>
+      ) : null}
       {shareUrl ? (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border border-line bg-elevated px-4 py-3 text-sm">
           <p className="text-muted">

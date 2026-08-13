@@ -202,6 +202,35 @@ export function PublicProfileView({
         )}
       </section>
 
+      {profile.resumes?.length ? (
+        <section className="border border-line bg-elevated px-5 py-6 sm:px-7">
+          <h2 className="font-display text-lg font-bold">Resume</h2>
+          <ul className="mt-3 space-y-2">
+            {profile.resumes.map((r) => (
+              <li
+                key={r.id}
+                className="flex flex-wrap items-center justify-between gap-2 text-sm"
+              >
+                <span>
+                  {r.file_name}
+                  {r.is_primary ? " (primary)" : ""}
+                </span>
+                {r.file_url ? (
+                  <a
+                    href={r.file_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-semibold text-brand hover:underline"
+                  >
+                    View resume
+                  </a>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {profile.certifications?.length ? (
         <section className="border border-line bg-elevated px-5 py-6 sm:px-7">
           <h2 className="font-display text-lg font-bold">Certifications</h2>

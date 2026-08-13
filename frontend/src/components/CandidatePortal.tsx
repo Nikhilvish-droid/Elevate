@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import {
@@ -14,11 +14,13 @@ import {
   IconOffer,
   IconUser,
 } from "@/components/DashShell";
+import { listMyNotifications } from "@/lib/candidate";
 import { getProfile, isOnboarded } from "@/lib/profile";
 
 export function CandidatePortal({ children }: { children: ReactNode }) {
   const path = usePathname();
   const router = useRouter();
+  const [unread, setUnread] = useState(0);
 
   useEffect(() => {
     getProfile().then((profile) => {
@@ -36,6 +38,30 @@ export function CandidatePortal({ children }: { children: ReactNode }) {
     });
   }, [router]);
 
+  useEffect(() => {
+    let alive = true;
+    async function refresh() {
+      try {
+        const notes = await listMyNotifications();
+        if (alive) setUnread(notes.filter((n) => !n.is_read).length);
+      } catch {
+        if (alive) setUnread(0);
+      }
+    }
+    refresh();
+    const timer = window.setInterval(refresh, 20000);
+    const onFocus = () => refresh();
+    const onInbox = () => refresh();
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("elevate-inbox", onInbox);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("elevate-inbox", onInbox);
+    };
+  }, [path]);
+
   const nav = [
     { href: "/candidate", label: "Home", icon: <IconHome /> },
     { href: "/candidate/profile", label: "Profile", icon: <IconUser /> },
@@ -44,7 +70,12 @@ export function CandidatePortal({ children }: { children: ReactNode }) {
     { href: "/candidate/interviews", label: "Rounds", icon: <IconCal /> },
     { href: "/candidate/assessments", label: "Tests", icon: <IconCheck /> },
     { href: "/candidate/offers", label: "Offers", icon: <IconOffer /> },
-    { href: "/candidate/inbox", label: "Inbox", icon: <IconMsg /> },
+    {
+      href: "/candidate/inbox",
+      label: "Inbox",
+      icon: <IconMsg />,
+      unread: unread > 0,
+    },
   ].map((item) => ({
     ...item,
     active:

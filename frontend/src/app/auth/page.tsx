@@ -132,53 +132,20 @@ function AuthForm() {
         return;
       }
 
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-        options: {
-          emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent(onboardingPath())}`,
-        },
+      // Create the user + send confirmation via Resend. Do not call
+      // supabase.auth.signUp — that uses Supabase SMTP and fails with
+      // "Error sending confirmation email".
+      await apiPublic("/api/auth/send-confirmation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+          redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(onboardingPath())}`,
+        }),
       });
-
-      if (signUpError) {
-        setError(signUpError.message);
-        return;
-      }
-
-      // Supabase returns a fake user with no identities when the email is taken.
-      if (data.user && (data.user.identities?.length ?? 0) === 0) {
-        setError("An account with this email already exists. Log in or reset your password.");
-        return;
-      }
-
-      // Email confirmation required — send link via our backend (Resend), not Supabase SMTP.
-      if (!data.session) {
-        try {
-          await apiPublic("/api/auth/send-confirmation", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              email: email.trim(),
-              password,
-              redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(onboardingPath())}`,
-            }),
-          });
-          setInfo(
-            "Check your email for a confirmation link. Open it to finish signup, then log in.",
-          );
-        } catch (mailErr) {
-          setError(
-            mailErr instanceof Error
-              ? mailErr.message
-              : "Account created, but the confirmation email could not be sent.",
-          );
-        }
-        return;
-      }
-
-      await afterLogin(
-        data.session?.access_token,
-        data.session?.expires_at,
+      setInfo(
+        "Check your email for a confirmation link. Open it to finish signup, then log in.",
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");

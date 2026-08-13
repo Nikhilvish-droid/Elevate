@@ -87,9 +87,18 @@ export async function deleteCompanyJob(id: number) {
 export type AiScreening = {
   candidate_name?: string | null;
   match_percentage?: number | null;
+  resume_score?: number | null;
+  fit_score?: number | null;
+  why_score?: number | null;
+  weights?: {
+    resume?: number;
+    fit?: number;
+    why?: number;
+  } | null;
   strong_skills?: string[];
   missing_skills?: string[];
   weak_areas?: string[];
+  summary?: string | null;
   recommendation?: string | null;
   verdict?: string | null;
   questions?: {
@@ -167,6 +176,12 @@ export async function runAiScreen(applicationId: number) {
   });
 }
 
+export async function getApplicationResume(applicationId: number) {
+  return api<{ url: string; file_name: string }>(
+    `/api/company/applications/${applicationId}/resume`,
+  );
+}
+
 export type PipelineApplicant = {
   application_id: number;
   candidate_id: number;
@@ -207,6 +222,71 @@ export type CompanyOffer = {
   job_title: string;
   profile_image_url: string | null;
 };
+
+export type ApplicantsByJob = {
+  id: number;
+  title: string;
+  location: string | null;
+  items: PipelineApplicant[];
+};
+
+export function groupApplicantsByJob(
+  rows: PipelineApplicant[],
+): ApplicantsByJob[] {
+  const map = new Map<number, ApplicantsByJob>();
+  for (const row of rows) {
+    const existing = map.get(row.job.id);
+    if (existing) {
+      existing.items.push(row);
+      continue;
+    }
+    map.set(row.job.id, {
+      id: row.job.id,
+      title: row.job.title,
+      location: row.job.location,
+      items: [row],
+    });
+  }
+  return [...map.values()].sort((a, b) => a.title.localeCompare(b.title));
+}
+
+export function countLabel(n: number, one: string, many: string) {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+function applicantStage(row: { status?: string | null }) {
+  return String(row.status || "").toLowerCase();
+}
+
+export function isRejectedApplicant(row: {
+  status?: string | null;
+}) {
+  return applicantStage(row) === "rejected";
+}
+
+export function isApprovedOrHired(row: {
+  status?: string | null;
+  approved_for_offer?: boolean | null;
+}) {
+  const status = applicantStage(row);
+  return (
+    Boolean(row.approved_for_offer) || status === "offer" || status === "hired"
+  );
+}
+
+export function isPendingReview(row: {
+  status?: string | null;
+  approved_for_offer?: boolean | null;
+}) {
+  if (isRejectedApplicant(row) || isApprovedOrHired(row)) return false;
+  return [
+    "shortlisted",
+    "technical_interview",
+    "hr_interview",
+    "interview",
+    "interviewing",
+  ].includes(applicantStage(row));
+}
 
 export async function listShortlistedApplicants() {
   const data = await api<{ applicants: PipelineApplicant[] }>(
@@ -262,8 +342,23 @@ export type AssignedInterview = {
   candidate_id: number;
   profile_image_url: string | null;
   candidate_location: string | null;
+  expertise?: string | null;
+  skills?: string[];
+  total_experience_years?: number | null;
+  professional_summary?: string | null;
+  how_you_fit?: string | null;
+  why_role?: string | null;
+  cover_letter?: string | null;
+  match_score?: number | null;
   job_title: string;
   company_name: string | null;
+  ai_screening?: AiScreening | null;
+  resume?: {
+    id: number;
+    file_name: string | null;
+    file_url: string | null;
+    file_type: string | null;
+  } | null;
   screening_questions?: {
     easy?: string[];
     medium?: string[];
@@ -329,6 +424,13 @@ export async function listAssignedInterviews() {
   return data.interviews;
 }
 
+export async function endCompanyInterview(interviewId: number) {
+  return api<{ id: number; status: string }>(
+    `/api/company/interviews/${interviewId}/end`,
+    { method: "POST" },
+  );
+}
+
 export async function submitInterviewFeedback(
   interviewId: number,
   input: {
@@ -354,6 +456,58 @@ export async function listApplicationFeedback(applicationId: number) {
   return data.feedback;
 }
 
+export type CompanyInterview = {
+  id: number;
+  application_id: number;
+  job_id: number | null;
+  job_title: string;
+  company_name?: string | null;
+  interview_type: string;
+  scheduled_at: string;
+  duration_minutes: number;
+  meeting_link: string | null;
+  location: string | null;
+  status: string;
+  interviewer_id: string | null;
+  interviewer_name: string | null;
+  candidate_name: string;
+};
+
+export async function listCompanyInterviews() {
+  const data = await api<{ interviews: CompanyInterview[] }>(
+    "/api/company/interviews",
+  );
+  return data.interviews;
+}
+
+export async function updateCompanyInterview(
+  interviewId: number,
+  input: {
+    scheduled_at?: string;
+    interviewer_id?: string;
+    interview_type?: string;
+    duration_minutes?: number;
+    meeting_link?: string | null;
+    location?: string | null;
+    create_google_meet?: boolean;
+  },
+) {
+  return api(`/api/company/interviews/${interviewId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function cancelCompanyInterview(interviewId: number) {
+  return api(`/api/company/interviews/${interviewId}/cancel`, {
+    method: "POST",
+  });
+}
+
+export async function getGoogleMeetStatus() {
+  return api<{ configured: boolean }>("/api/company/interviews/meet-status");
+}
+
 export async function scheduleCompanyInterview(input: {
   application_id: number;
   interviewer_id: string;
@@ -362,6 +516,7 @@ export async function scheduleCompanyInterview(input: {
   duration_minutes?: number;
   meeting_link?: string | null;
   location?: string | null;
+  create_google_meet?: boolean;
 }) {
   return api("/api/company/interviews", {
     method: "POST",
@@ -369,15 +524,55 @@ export async function scheduleCompanyInterview(input: {
   });
 }
 
+export type ApplicationMessage = {
+  id: number;
+  application_id: number;
+  template_key: string | null;
+  subject: string;
+  body: string;
+  email_sent: boolean;
+  created_at: string;
+  sender_name: string;
+};
+
+export async function listApplicationMessages(applicationId: number) {
+  const data = await api<{ messages: ApplicationMessage[] }>(
+    `/api/company/applications/${applicationId}/messages`,
+  );
+  return data.messages || [];
+}
+
 export async function sendCompanyMessage(input: {
   application_id: number;
   subject: string;
   message: string;
+  template_key?: string | null;
 }) {
-  return api<{ ok: boolean }>("/api/company/messages", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
+  return api<{ ok: boolean; inbox?: boolean; email?: boolean }>(
+    "/api/company/messages",
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export type CompanyNotification = {
+  id: number;
+  title: string;
+  message: string;
+  notification_type: string;
+  is_read: boolean;
+  created_at: string;
+  entity_type: string | null;
+  entity_id: number | null;
+};
+
+export async function listCompanyNotifications() {
+  const data = await api<{ notifications: CompanyNotification[] }>(
+    "/api/company/notifications",
+  );
+  return data.notifications || [];
 }
 
 export function formatSalary(min?: number | null, max?: number | null) {

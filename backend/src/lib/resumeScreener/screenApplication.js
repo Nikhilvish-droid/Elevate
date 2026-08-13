@@ -165,16 +165,26 @@ async function screenApplication(supabase, applicationId, { generateQs = true } 
   let { data: app, error: appErr } = await readClient
     .from("applications")
     .select(
-      "id, status, resume_id, candidate_id, job_id, jobs(id, title, description)",
+      "id, status, resume_id, candidate_id, job_id, cover_letter, how_you_fit, why_role, jobs(id, title, description)",
     )
     .eq("id", applicationId)
     .maybeSingle();
+
+  if (appErr && /how_you_fit|why_role/i.test(appErr.message || "")) {
+    ({ data: app, error: appErr } = await readClient
+      .from("applications")
+      .select(
+        "id, status, resume_id, candidate_id, job_id, cover_letter, jobs(id, title, description)",
+      )
+      .eq("id", applicationId)
+      .maybeSingle());
+  }
 
   if (appErr || !app) {
     ({ data: app, error: appErr } = await supabase
       .from("applications")
       .select(
-        "id, status, resume_id, candidate_id, job_id, jobs(id, title, description)",
+        "id, status, resume_id, candidate_id, job_id, cover_letter, jobs(id, title, description)",
       )
       .eq("id", applicationId)
       .maybeSingle());
@@ -218,7 +228,26 @@ async function screenApplication(supabase, applicationId, { generateQs = true } 
     throw err;
   }
 
-  const rating = await rateResume(resumeText, jobDescription);
+  function parseCoverParts(cover) {
+    const text = String(cover || "");
+    const fitMatch = text.match(
+      /How I fit this role:\s*([\s\S]*?)(?:\n\s*Why I want this role:|$)/i,
+    );
+    const whyMatch = text.match(/Why I want this role:\s*([\s\S]*)$/i);
+    return {
+      fit: fitMatch?.[1]?.trim() || null,
+      why: whyMatch?.[1]?.trim() || null,
+    };
+  }
+
+  const coverParts = parseCoverParts(app.cover_letter);
+  const howYouFit = String(app.how_you_fit || coverParts.fit || "").trim();
+  const whyRole = String(app.why_role || coverParts.why || "").trim();
+
+  const rating = await rateResume(resumeText, jobDescription, {
+    howYouFit,
+    whyRole,
+  });
   let questions = null;
   if (generateQs) {
     try {
@@ -236,9 +265,14 @@ async function screenApplication(supabase, applicationId, { generateQs = true } 
   const ai_screening = {
     candidate_name: rating.candidate_name || null,
     match_percentage: matchScore,
+    resume_score: rating.resume_score ?? null,
+    fit_score: rating.fit_score ?? null,
+    why_score: rating.why_score ?? null,
+    weights: rating.weights || null,
     strong_skills: rating.strong_skills || [],
     missing_skills: rating.missing_skills || [],
     weak_areas: rating.weak_areas || [],
+    summary: rating.summary || null,
     recommendation: rating.recommendation || null,
     verdict: rating.verdict || null,
     questions: questions || null,

@@ -127,7 +127,8 @@ async function buildSessionProfile(supabase, user) {
 
   const names = await roleNamesFor(supabase, user.id);
   const cand = await loadCandidateRow(supabase, user.id);
-  const isCandidate = names.includes("candidate") || Boolean(cand);
+  const isAdmin = names.includes("admin");
+  const isCandidate = !isAdmin && (names.includes("candidate") || Boolean(cand));
 
   let membership = null;
   let pendingJoin = null;
@@ -155,14 +156,18 @@ async function buildSessionProfile(supabase, user) {
   const location = cand?.location ?? null;
   const headline = cand?.professional_summary ?? null;
 
-  const role = isCandidate
-    ? "candidate"
-    : membership || pendingJoin
-      ? "company"
-      : null;
-  const onboarding_complete = isCandidate
-    ? Boolean(candidate_id)
-    : Boolean(membership?.company_id);
+  const role = isAdmin
+    ? "admin"
+    : isCandidate
+      ? "candidate"
+      : membership || pendingJoin
+        ? "company"
+        : null;
+  const onboarding_complete = isAdmin
+    ? true
+    : isCandidate
+      ? Boolean(candidate_id)
+      : Boolean(membership?.company_id);
 
   return {
     id: appUser.id,

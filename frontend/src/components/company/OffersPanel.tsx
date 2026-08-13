@@ -2,20 +2,27 @@
 
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { ApplicationMessageThread } from "@/components/company/ApplicationMessageThread";
+import { CandidateMessageModal } from "@/components/company/CandidateMessageModal";
+import { BackToJobs, JobPickList } from "@/components/company/JobPickList";
 import { stageLabel } from "@/lib/candidate";
 import {
+  countLabel,
   createCompanyOffer,
+  groupApplicantsByJob,
   listCompanyOffers,
   listShortlistedApplicants,
   updateApplicationStatus,
   type CompanyOffer,
   type PipelineApplicant,
 } from "@/lib/companyJobs";
+import { formatCtcLabel } from "@/lib/candidateMessages";
+import { getCompanyWorkspace } from "@/lib/company";
 import { profileSlug } from "@/lib/user";
 
 type Props = {
   onSchedule?: () => void;
-  onEmail?: () => void;
+  onEmail?: (applicationId?: number) => void;
   onOffer?: () => void;
 };
 
@@ -33,6 +40,13 @@ export function ShortlistPanel({ onSchedule, onEmail, onOffer }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
+
+  const jobs = useMemo(() => groupApplicantsByJob(rows), [rows]);
+  const activeJob =
+    selectedJobId == null
+      ? null
+      : jobs.find((job) => job.id === selectedJobId) ?? null;
 
   const load = useCallback(async () => {
     try {
@@ -64,10 +78,14 @@ export function ShortlistPanel({ onSchedule, onEmail, onOffer }: Props) {
   return (
     <section>
       <div className="mb-4">
-        <h2 className="font-display text-xl font-bold">Shortlist</h2>
+        {activeJob ? <BackToJobs onClick={() => setSelectedJobId(null)} /> : null}
+        <h2 className={`${activeJob ? "mt-2 " : ""}font-display text-xl font-bold`}>
+          Shortlist
+        </h2>
         <p className="mt-1 text-sm text-muted">
-          Candidates in shortlist or interview stages. Offers need hiring
-          manager approval first.
+          {activeJob
+            ? `Candidates shortlisted for ${activeJob.title}. Offers need hiring manager approval first.`
+            : "Pick a job to see who is shortlisted. Offers need hiring manager approval first."}
         </p>
       </div>
       {error ? (
@@ -79,91 +97,107 @@ export function ShortlistPanel({ onSchedule, onEmail, onOffer }: Props) {
         <p className="border border-line bg-elevated px-5 py-10 text-center text-sm text-muted">
           Loading shortlist…
         </p>
-      ) : rows.length === 0 ? (
-        <p className="border border-line bg-elevated px-5 py-10 text-center text-sm text-muted">
-          No shortlisted candidates yet. Shortlist people from Apps.
-        </p>
-      ) : (
-        <ul className="divide-y divide-line border border-line bg-elevated">
-          {rows.map((person) => (
-            <li
-              key={person.application_id}
-              className="flex flex-wrap items-start justify-between gap-4 px-5 py-5"
-            >
-              <div className="flex gap-3">
-                {person.profile_image_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={person.profile_image_url}
-                    alt=""
-                    className="h-11 w-11 rounded-full object-cover"
-                  />
-                ) : (
-                  <span className="flex h-11 w-11 items-center justify-center rounded-full bg-soft text-sm font-bold text-brand">
-                    {person.full_name.slice(0, 1)}
-                  </span>
-                )}
-                <div>
-                  <p className="font-semibold">{person.full_name}</p>
-                  <p className="text-sm text-muted">
-                    {person.job.title}
-                    {person.location ? ` · ${person.location}` : ""}
-                  </p>
-                  <p className="mt-1 text-xs text-muted">
-                    {stageLabel(person.status)}
-                    {person.approved_for_offer ? " · Approved for offer" : ""}
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={onSchedule}
-                      className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold hover:bg-soft"
-                    >
-                      Interview
-                    </button>
-                    <button
-                      type="button"
-                      onClick={onEmail}
-                      className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold hover:bg-soft"
-                    >
-                      Email
-                    </button>
-                    {person.approved_for_offer ? (
+      ) : activeJob ? (
+        activeJob.items.length === 0 ? (
+          <p className="border border-line bg-elevated px-5 py-10 text-center text-sm text-muted">
+            No shortlisted candidates for this job.
+          </p>
+        ) : (
+          <ul className="divide-y divide-line border border-line bg-elevated">
+            {activeJob.items.map((person) => (
+              <li
+                key={person.application_id}
+                className="px-5 py-5"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="flex gap-3">
+                  {person.profile_image_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={person.profile_image_url}
+                      alt=""
+                      className="h-11 w-11 rounded-full object-cover"
+                    />
+                  ) : (
+                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-soft text-sm font-bold text-brand">
+                      {person.full_name.slice(0, 1)}
+                    </span>
+                  )}
+                  <div>
+                    <p className="font-semibold">{person.full_name}</p>
+                    <p className="text-sm text-muted">
+                      {person.location || "Location TBD"}
+                    </p>
+                    <p className="mt-1 text-xs text-muted">
+                      {stageLabel(person.status)}
+                      {person.approved_for_offer ? " · Approved for offer" : ""}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
                       <button
                         type="button"
-                        onClick={onOffer}
+                        onClick={onSchedule}
                         className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold hover:bg-soft"
                       >
-                        Offer
+                        Interview
                       </button>
-                    ) : null}
-                    <Link
-                      href={`/u/${profileSlug(person.full_name)}-${person.candidate_id}`}
-                      className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold hover:bg-soft"
-                    >
-                      Profile
-                    </Link>
-                    <button
-                      type="button"
-                      disabled={busyId === person.application_id}
-                      onClick={() => remove(person)}
-                      className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold hover:bg-soft disabled:opacity-60"
-                    >
-                      Remove
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => onEmail?.(person.application_id)}
+                        className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold hover:bg-soft"
+                      >
+                        Message
+                      </button>
+                      {person.approved_for_offer ? (
+                        <button
+                          type="button"
+                          onClick={onOffer}
+                          className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold hover:bg-soft"
+                        >
+                          Offer
+                        </button>
+                      ) : null}
+                      <Link
+                        href={`/u/${profileSlug(person.full_name)}-${person.candidate_id}`}
+                        className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold hover:bg-soft"
+                      >
+                        Profile
+                      </Link>
+                      <button
+                        type="button"
+                        disabled={busyId === person.application_id}
+                        onClick={() => remove(person)}
+                        className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold hover:bg-soft disabled:opacity-60"
+                      >
+                        Remove
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <span className="text-sm font-semibold text-brand">
-                {person.match_score != null
-                  ? `${Math.round(person.match_score)}% match`
-                  : person.approved_for_offer
-                    ? "Offer ready"
-                    : "Shortlisted"}
-              </span>
-            </li>
-          ))}
-        </ul>
+                <span className="text-sm font-semibold text-brand">
+                  {person.match_score != null
+                    ? `${Math.round(person.match_score)}% match`
+                    : person.approved_for_offer
+                      ? "Offer ready"
+                      : "Shortlisted"}
+                </span>
+                </div>
+                <ApplicationMessageThread applicationId={person.application_id} />
+              </li>
+            ))}
+          </ul>
+        )
+      ) : (
+        <JobPickList
+          jobs={jobs.map((job) => ({
+            id: job.id,
+            title: job.title,
+            subtitle: job.location,
+            meta: countLabel(job.items.length, "shortlisted", "shortlisted"),
+          }))}
+          onSelect={setSelectedJobId}
+          empty="No shortlisted candidates yet. Shortlist people from Apps."
+          actionLabel="View shortlist"
+        />
       )}
     </section>
   );
@@ -172,6 +206,7 @@ export function ShortlistPanel({ onSchedule, onEmail, onOffer }: Props) {
 export function OffersPanel({ isFounder = false }: { isFounder?: boolean }) {
   const [shortlist, setShortlist] = useState<PipelineApplicant[]>([]);
   const [offers, setOffers] = useState<CompanyOffer[]>([]);
+  const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
   const [applicationId, setApplicationId] = useState<number | "">("");
   const [role, setRole] = useState("");
   const [ctc, setCtc] = useState("");
@@ -181,11 +216,67 @@ export function OffersPanel({ isFounder = false }: { isFounder?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [companyName, setCompanyName] = useState("Company");
+  const [offerMsg, setOfferMsg] = useState<{
+    applicationId: number;
+    name: string;
+    job: string;
+    ctc: string;
+    location: string;
+    joining_date: string;
+  } | null>(null);
 
   const eligible = useMemo(() => {
     if (isFounder) return shortlist;
     return shortlist.filter((p) => p.approved_for_offer);
   }, [shortlist, isFounder]);
+
+  const jobOptions = useMemo(() => {
+    const map = new Map<
+      number,
+      { id: number; title: string; location: string | null; ready: number; sent: number }
+    >();
+    for (const person of eligible) {
+      const existing = map.get(person.job.id);
+      if (existing) {
+        existing.ready += 1;
+        continue;
+      }
+      map.set(person.job.id, {
+        id: person.job.id,
+        title: person.job.title,
+        location: person.job.location,
+        ready: 1,
+        sent: 0,
+      });
+    }
+    for (const offer of offers) {
+      const existing = map.get(offer.job_id);
+      if (existing) {
+        existing.sent += 1;
+        continue;
+      }
+      map.set(offer.job_id, {
+        id: offer.job_id,
+        title: offer.job_title,
+        location: offer.location,
+        ready: 0,
+        sent: 1,
+      });
+    }
+    return [...map.values()].sort((a, b) => a.title.localeCompare(b.title));
+  }, [eligible, offers]);
+
+  const activeJob =
+    selectedJobId == null
+      ? null
+      : jobOptions.find((job) => job.id === selectedJobId) ?? null;
+  const jobEligible = activeJob
+    ? eligible.filter((person) => person.job.id === activeJob.id)
+    : [];
+  const jobOffers = activeJob
+    ? offers.filter((offer) => offer.job_id === activeJob.id)
+    : [];
 
   const load = useCallback(async () => {
     try {
@@ -196,37 +287,45 @@ export function OffersPanel({ isFounder = false }: { isFounder?: boolean }) {
       ]);
       setShortlist(s);
       setOffers(o);
-      const pool = isFounder ? s : s.filter((p) => p.approved_for_offer);
-      if (!applicationId && pool[0]) {
-        setApplicationId(pool[0].application_id);
-        setRole(pool[0].job.title);
-        setLocation(pool[0].job.location || "");
-        if (pool[0].job.salary_max) {
-          setCtc(String(pool[0].job.salary_max));
-        } else if (pool[0].job.salary_min) {
-          setCtc(String(pool[0].job.salary_min));
-        }
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load offers.");
     } finally {
       setLoading(false);
     }
-  }, [applicationId, isFounder]);
+  }, []);
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    getCompanyWorkspace()
+      .then((ws) => setCompanyName(ws.company.name || "Company"))
+      .catch(() => {});
+  }, [load]);
 
-  function onPick(id: number) {
-    setApplicationId(id);
-    const person = shortlist.find((p) => p.application_id === id);
-    if (!person) return;
+  function fillFromPerson(person: PipelineApplicant | undefined) {
+    if (!person) {
+      setApplicationId("");
+      setRole("");
+      setLocation("");
+      setCtc("");
+      return;
+    }
+    setApplicationId(person.application_id);
     setRole(person.job.title);
     setLocation(person.job.location || "");
     if (person.job.salary_max) setCtc(String(person.job.salary_max));
     else if (person.job.salary_min) setCtc(String(person.job.salary_min));
+    else setCtc("");
+  }
+
+  function openJob(id: number) {
+    setSelectedJobId(id);
+    setMessage("");
+    const pool = eligible.filter((person) => person.job.id === id);
+    fillFromPerson(pool[0]);
+  }
+
+  function onPick(id: number) {
+    fillFromPerson(shortlist.find((p) => p.application_id === id));
   }
 
   async function onSubmit(e: FormEvent) {
@@ -246,7 +345,20 @@ export function OffersPanel({ isFounder = false }: { isFounder?: boolean }) {
         location: location.trim() || null,
         joining_date: joiningDate || null,
       });
-      setMessage("Offer sent to the candidate.");
+      const person = shortlist.find(
+        (row) => row.application_id === Number(applicationId),
+      );
+      setOfferMsg({
+        applicationId: Number(applicationId),
+        name: person?.full_name || "Candidate",
+        job: role.trim() || activeJob?.title || "the role",
+        ctc: formatCtcLabel(ctc),
+        location: location.trim() || person?.job.location || "TBD",
+        joining_date: joiningDate
+          ? new Date(joiningDate).toLocaleDateString("en-IN")
+          : "TBD",
+      });
+      setMessage("Offer created. Send the CTC note to their Inbox.");
       setCtc("");
       setJoiningDate("");
       await load();
@@ -265,14 +377,83 @@ export function OffersPanel({ isFounder = false }: { isFounder?: boolean }) {
     );
   }
 
+  if (!activeJob) {
+    return (
+      <section>
+        <div className="mb-4">
+          <h2 className="font-display text-xl font-bold">Offer letters</h2>
+          <p className="mt-1 text-sm text-muted">
+            {isFounder
+              ? "Pick a job, then generate an offer for a shortlisted candidate."
+              : "Pick a job, then generate an offer after the hiring manager approves."}
+          </p>
+        </div>
+        {error ? (
+          <p className="mb-4 text-sm text-red-600" role="alert">
+            {error}
+          </p>
+        ) : null}
+        <JobPickList
+          jobs={jobOptions.map((job) => ({
+            id: job.id,
+            title: job.title,
+            subtitle: job.location,
+            meta: [
+              job.ready
+                ? countLabel(job.ready, "ready for offer", "ready for offer")
+                : null,
+              job.sent ? countLabel(job.sent, "sent", "sent") : null,
+            ]
+              .filter(Boolean)
+              .join(" · "),
+          }))}
+          onSelect={openJob}
+          empty={
+            isFounder
+              ? "No shortlisted candidates yet. Shortlist someone in Apps first."
+              : "No candidates are approved for offer yet. Ask a hiring manager to approve from Shortlist."
+          }
+          actionLabel="View offers"
+        />
+      </section>
+    );
+  }
+
   return (
     <div className="space-y-8">
+      {offerMsg ? (
+        <CandidateMessageModal
+          open
+          applicationId={offerMsg.applicationId}
+          candidateName={offerMsg.name}
+          kind="offer_ctc"
+          vars={{
+            name: offerMsg.name,
+            job: offerMsg.job,
+            company: companyName,
+            ctc: offerMsg.ctc,
+            location: offerMsg.location,
+            joining_date: offerMsg.joining_date,
+          }}
+          onClose={() => setOfferMsg(null)}
+          onSent={() => {
+            setOfferMsg(null);
+            setMessage("CTC offer sent to the candidate Inbox.");
+          }}
+          onSkip={() => {
+            setOfferMsg(null);
+            setMessage("Offer saved. Inbox note was skipped.");
+          }}
+        />
+      ) : null}
       <div>
-        <h2 className="font-display text-xl font-bold">Offer letters</h2>
+        <BackToJobs onClick={() => setSelectedJobId(null)} />
+        <h2 className="mt-2 font-display text-xl font-bold">Offer letters</h2>
         <p className="mt-1 text-sm text-muted">
+          {activeJob.title}
           {isFounder
-            ? "Generate an offer for a shortlisted candidate (founder can bypass HM approval)."
-            : "Generate an offer only after the hiring manager approves the hire."}
+            ? " — generate an offer for a shortlisted candidate (founder can bypass HM approval)."
+            : " — generate an offer only after the hiring manager approves the hire."}
         </p>
       </div>
 
@@ -284,11 +465,13 @@ export function OffersPanel({ isFounder = false }: { isFounder?: boolean }) {
       {message ? <p className="text-sm text-brand">{message}</p> : null}
 
       <form onSubmit={onSubmit} className="border border-line bg-elevated px-5 py-6">
-        {eligible.length === 0 ? (
+        {jobEligible.length === 0 ? (
           <p className="text-sm text-muted">
-            {isFounder
-              ? "No shortlisted candidates yet. Shortlist someone in Apps first."
-              : "No candidates are approved for offer yet. Ask a hiring manager to approve from Shortlist."}
+            {jobOffers.length > 0
+              ? "No more candidates are ready for an offer on this job."
+              : isFounder
+                ? "No shortlisted candidates for this job yet."
+                : "No candidates are approved for offer on this job yet."}
           </p>
         ) : (
           <div className="space-y-4">
@@ -300,9 +483,9 @@ export function OffersPanel({ isFounder = false }: { isFounder?: boolean }) {
                 onChange={(e) => onPick(Number(e.target.value))}
                 className="mt-1.5 w-full rounded-md border border-line bg-surface px-3 py-2.5 text-sm"
               >
-                {eligible.map((p) => (
+                {jobEligible.map((p) => (
                   <option key={p.application_id} value={p.application_id}>
-                    {p.full_name} · {p.job.title}
+                    {p.full_name}
                     {p.approved_for_offer ? " · Approved" : ""}
                   </option>
                 ))}
@@ -353,19 +536,22 @@ export function OffersPanel({ isFounder = false }: { isFounder?: boolean }) {
             >
               {busy ? "Sending…" : "Generate offer"}
             </button>
+            {applicationId ? (
+              <ApplicationMessageThread applicationId={Number(applicationId)} />
+            ) : null}
           </div>
         )}
       </form>
 
       <div>
         <h3 className="text-sm font-semibold">Sent offers</h3>
-        {offers.length === 0 ? (
+        {jobOffers.length === 0 ? (
           <p className="mt-3 border border-line bg-elevated px-5 py-8 text-sm text-muted">
-            No offers sent yet.
+            No offers sent for this job yet.
           </p>
         ) : (
           <ul className="mt-3 divide-y divide-line border border-line bg-elevated">
-            {offers.map((offer) => (
+            {jobOffers.map((offer) => (
               <li
                 key={offer.id}
                 className="flex flex-wrap items-start justify-between gap-3 px-5 py-4"
@@ -373,8 +559,7 @@ export function OffersPanel({ isFounder = false }: { isFounder?: boolean }) {
                 <div>
                   <p className="font-semibold">{offer.candidate_name}</p>
                   <p className="text-sm text-muted">
-                    {offer.job_title}
-                    {offer.location ? ` · ${offer.location}` : ""}
+                    {offer.location || activeJob.title}
                   </p>
                   <p className="mt-1 text-sm">{formatCtc(offer.salary)}</p>
                   {offer.joining_date ? (

@@ -269,7 +269,15 @@ export default function CandidateHome() {
         </section>
         <section className="border border-line bg-elevated px-5 py-5">
           <div className="flex items-center justify-between">
-            <h2 className="font-display text-lg font-bold">Inbox</h2>
+            <h2 className="flex items-center gap-2 font-display text-lg font-bold">
+              Inbox
+              {unread > 0 ? (
+                <span
+                  className="h-2.5 w-2.5 rounded-full bg-orange-500"
+                  aria-label={`${unread} unread messages`}
+                />
+              ) : null}
+            </h2>
             <Link href="/candidate/inbox" className="text-xs font-semibold text-brand">
               {unread} unread
             </Link>

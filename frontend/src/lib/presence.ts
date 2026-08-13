@@ -40,11 +40,14 @@ export function togglePresence(userId: string): PresenceStatus {
 }
 
 export function presenceLabel(
-  role: "candidate" | "company",
+  role: "candidate" | "company" | "admin",
   status: PresenceStatus,
 ) {
   if (role === "candidate") {
     return status === "active" ? "Ready to interview" : "Away";
+  }
+  if (role === "admin") {
+    return status === "active" ? "Admin online" : "Away";
   }
   return status === "active" ? "Active" : "Paused";
 }

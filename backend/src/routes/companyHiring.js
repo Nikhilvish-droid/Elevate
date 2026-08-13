@@ -6,6 +6,7 @@ const {
   requireRecruiter,
   requireHiringManager,
   requireInterviewer,
+  canInterview,
 } = require("../lib/company");
 const { JOB_SELECT, JOB_SELECT_BASIC, mapJob, parseJobBody } = require("../lib/companyJobs");
 const {
@@ -15,7 +16,27 @@ const {
   stageLabel: appStageLabel,
   canViewHiringPipeline,
 } = require("../lib/applicationStages");
-const { screenApplication } = require("../lib/resumeScreener/screenApplication");
+const {
+  screenApplication,
+  loadResumeRow,
+  resumeStoragePath,
+} = require("../lib/resumeScreener/screenApplication");
+const { signResumeUrls } = require("../lib/candidateProfile");
+const { supabaseAdmin } = require("../supabase");
+const {
+  sendCandidateMessage,
+  loadMessageContext,
+} = require("../lib/candidateComms");
+const {
+  googleMeetConfigured,
+  createGoogleMeet,
+} = require("../lib/googleMeet");
+const {
+  listCompanyInterviews,
+  getCompanyInterviewRow,
+  syncApplicationStageFromInterviews,
+  notifyInterview,
+} = require("../lib/companyInterviews");
 
 const COMPANY_SELECT =
   "id, name, website_url, industry, company_size, description, linkedin_url, twitter_url, github_url, logo_url, created_at";
@@ -368,13 +389,21 @@ function mountCompanyHiringRoutes(admin) {
   admin.get(
     "/jobs",
     asyncHandler(async (req, res) => {
-      const membership = await requireJobManager(req.supabase, req.user.id);
-      const data = await selectCompanyJobs(req.supabase, membership.company_id, {
+      const membership = await requireCompanyMember(req.supabase, req.user.id);
+      if (!canViewHiringPipeline(membership.membership_role)) {
+        return fail(
+          res,
+          403,
+          "Only founders, recruiters, and hiring managers can view jobs.",
+        );
+      }
+      const db = supabaseAdmin() || req.supabase;
+      const data = await selectCompanyJobs(db, membership.company_id, {
         status: req.query.status ? String(req.query.status) : undefined,
       });
       const rows = (data || []).map(mapJob);
       const counts = await applicantCounts(
-        req.supabase,
+        db,
         rows.map((j) => j.id),
       );
 
@@ -465,8 +494,9 @@ function mountCompanyHiringRoutes(admin) {
       }
       const jobId = Number(req.params.id);
       if (!Number.isFinite(jobId)) return fail(res, 400, "Invalid job id.");
+      const db = supabaseAdmin() || req.supabase;
 
-      const { data: job, error: jobErr } = await req.supabase
+      const { data: job, error: jobErr } = await db
         .from("jobs")
         .select("id, title, status, company_id, location, work_mode")
         .eq("id", jobId)
@@ -475,7 +505,7 @@ function mountCompanyHiringRoutes(admin) {
       if (jobErr) throw new Error(jobErr.message);
       if (!job) return fail(res, 404, "Job not found.");
 
-      const { data: apps, error: appErr } = await req.supabase
+      const { data: apps, error: appErr } = await db
         .from("applications")
         .select(
           "id, status, match_score, applied_at, cover_letter, how_you_fit, why_role, resume_id, ai_screening, candidate_id, candidates(id, first_name, last_name, profile_image_url, location, total_experience_years, professional_summary), resumes(id, file_name, file_url, file_type, is_primary)",
@@ -486,7 +516,7 @@ function mountCompanyHiringRoutes(admin) {
       let rows = apps || [];
       let selectErr = appErr;
       if (selectErr && /ai_screening/i.test(selectErr.message || "")) {
-        const fallbackAi = await req.supabase
+        const fallbackAi = await db
           .from("applications")
           .select(
             "id, status, match_score, applied_at, cover_letter, how_you_fit, why_role, resume_id, candidate_id, candidates(id, first_name, last_name, profile_image_url, location, total_experience_years, professional_summary), resumes(id, file_name, file_url, file_type, is_primary)",
@@ -497,7 +527,7 @@ function mountCompanyHiringRoutes(admin) {
         selectErr = fallbackAi.error;
       }
       if (selectErr && /how_you_fit|why_role|resumes/i.test(selectErr.message || "")) {
-        const fallback = await req.supabase
+        const fallback = await db
           .from("applications")
           .select(
             "id, status, match_score, applied_at, cover_letter, resume_id, candidate_id, candidates(id, first_name, last_name, profile_image_url, location, total_experience_years, professional_summary)",
@@ -515,7 +545,6 @@ function mountCompanyHiringRoutes(admin) {
         .map((row) => row.resume_id);
       const resumesById = {};
       if (missingResumeIds.length) {
-        const { supabaseAdmin } = require("../supabase");
         const admin = supabaseAdmin();
         const client = admin || req.supabase;
         const { data: resumeRows } = await client
@@ -524,6 +553,13 @@ function mountCompanyHiringRoutes(admin) {
           .in("id", missingResumeIds);
         for (const r of resumeRows || []) resumesById[r.id] = r;
       }
+
+      const unsignedResumes = rows
+        .map((row) => unwrap(row.resumes) || resumesById[row.resume_id] || null)
+        .filter((r) => r?.file_url);
+      const signedResumes = await signResumeUrls(req.supabase, unsignedResumes);
+      const signedById = {};
+      for (const r of signedResumes) signedById[r.id] = r;
 
       const candidateIds = rows
         .map((row) => {
@@ -535,7 +571,7 @@ function mountCompanyHiringRoutes(admin) {
       const skillsById = {};
       const rolesById = {};
       if (candidateIds.length) {
-        const { data: skillRows } = await req.supabase
+        const { data: skillRows } = await db
           .from("candidate_skills")
           .select("candidate_id, skills(name, category)")
           .in("candidate_id", candidateIds);
@@ -566,7 +602,11 @@ function mountCompanyHiringRoutes(admin) {
 
       const applicants = rows.map((row) => {
         const cand = unwrap(row.candidates) || {};
-        const resume = unwrap(row.resumes) || resumesById[row.resume_id] || null;
+        const resume =
+          signedById[row.resume_id] ||
+          unwrap(row.resumes) ||
+          resumesById[row.resume_id] ||
+          null;
         const cid = cand.id || row.candidate_id;
         const name = [cand.first_name, cand.last_name]
           .filter(Boolean)
@@ -682,10 +722,11 @@ function mountCompanyHiringRoutes(admin) {
     "/applications/:id/approve",
     asyncHandler(async (req, res) => {
       const membership = await requireHiringManager(req.supabase, req.user.id);
+      const db = supabaseAdmin() || req.supabase;
       const appId = Number(req.params.id);
       if (!Number.isFinite(appId)) return fail(res, 400, "Invalid application id.");
 
-      const { data: app, error: findErr } = await req.supabase
+      const { data: app, error: findErr } = await db
         .from("applications")
         .select(
           "id, status, candidate_id, job_id, jobs(company_id, title, companies(name)), candidates(user_id, first_name)",
@@ -705,7 +746,7 @@ function mountCompanyHiringRoutes(admin) {
         approved_by: req.user.id,
       };
 
-      let { data, error } = await req.supabase
+      let { data, error } = await db
         .from("applications")
         .update(patch)
         .eq("id", appId)
@@ -722,23 +763,6 @@ function mountCompanyHiringRoutes(admin) {
         );
       }
       if (error) throw new Error(error.message);
-
-      const cand = unwrap(app.candidates);
-      const companyName = unwrap(job.companies)?.name || "Company";
-      if (cand?.user_id) {
-        await req.supabase.from("notifications").insert({
-          user_id: cand.user_id,
-          notification_type: "application",
-          title: `Approved for offer · ${companyName}`,
-          message: [
-            `From ${companyName}`,
-            `Role: ${job.title}`,
-            "A hiring manager approved you for an offer. The recruiter will send details next.",
-          ].join("\n"),
-          entity_type: "application",
-          entity_id: appId,
-        });
-      }
 
       res.json(data);
     }),
@@ -757,10 +781,11 @@ function mountCompanyHiringRoutes(admin) {
         return fail(res, 403, "You cannot reject applications.");
       }
 
+      const db = supabaseAdmin() || req.supabase;
       const appId = Number(req.params.id);
       if (!Number.isFinite(appId)) return fail(res, 400, "Invalid application id.");
 
-      const { data: app, error: findErr } = await req.supabase
+      const { data: app, error: findErr } = await db
         .from("applications")
         .select(
           "id, jobs(company_id, title, companies(name)), candidates(user_id)",
@@ -774,7 +799,7 @@ function mountCompanyHiringRoutes(admin) {
         return fail(res, 403, "This application is not for your company.");
       }
 
-      const { data, error } = await req.supabase
+      const { data, error } = await db
         .from("applications")
         .update({
           status: "rejected",
@@ -785,7 +810,7 @@ function mountCompanyHiringRoutes(admin) {
         .single();
 
       if (error && /approved_for_offer/i.test(error.message || "")) {
-        const fallback = await req.supabase
+        const fallback = await db
           .from("applications")
           .update({ status: "rejected" })
           .eq("id", appId)
@@ -797,24 +822,72 @@ function mountCompanyHiringRoutes(admin) {
       }
       if (error) throw new Error(error.message);
 
-      const cand = unwrap(app.candidates);
-      const companyName = unwrap(job.companies)?.name || "Company";
-      if (cand?.user_id) {
-        await req.supabase.from("notifications").insert({
-          user_id: cand.user_id,
-          notification_type: "application",
-          title: `Update from ${companyName}`,
-          message: [
-            `From ${companyName}`,
-            `Role: ${job.title}`,
-            "Your application was not moved forward.",
-          ].join("\n"),
-          entity_type: "application",
-          entity_id: appId,
-        });
+      res.json(data);
+    }),
+  );
+
+  admin.get(
+    "/applications/:id/resume",
+    asyncHandler(async (req, res) => {
+      const membership = await requireCompanyMember(req.supabase, req.user.id);
+      if (
+        !canViewHiringPipeline(membership.membership_role) &&
+        !canInterview(membership.membership_role)
+      ) {
+        return fail(res, 403, "You cannot open this resume.");
+      }
+      const appId = Number(req.params.id);
+      if (!Number.isFinite(appId)) return fail(res, 400, "Invalid application id.");
+
+      const { data: app, error: findErr } = await req.supabase
+        .from("applications")
+        .select("id, resume_id, candidate_id, jobs(company_id)")
+        .eq("id", appId)
+        .maybeSingle();
+      if (findErr) throw new Error(findErr.message);
+      if (!app) return fail(res, 404, "Application not found.");
+      const job = unwrap(app.jobs);
+      if (!job || job.company_id !== membership.company_id) {
+        return fail(res, 403, "This application is not for your company.");
+      }
+      if (
+        !canViewHiringPipeline(membership.membership_role) &&
+        canInterview(membership.membership_role)
+      ) {
+        const { data: assigned } = await req.supabase
+          .from("interviews")
+          .select("id")
+          .eq("application_id", appId)
+          .eq("interviewer_id", req.user.id)
+          .limit(1)
+          .maybeSingle();
+        if (!assigned) {
+          return fail(res, 403, "This interview is not assigned to you.");
+        }
       }
 
-      res.json(data);
+      const resume = await loadResumeRow(req.supabase, {
+        resumeId: app.resume_id,
+        candidateId: app.candidate_id,
+      });
+      if (!resume?.file_url) {
+        return fail(res, 404, "No resume on this application.");
+      }
+
+      const admin = supabaseAdmin();
+      const client = admin || req.supabase;
+      const path = resumeStoragePath(resume.file_url) || String(resume.file_url);
+      const { data: signed, error } = await client.storage
+        .from("resumes")
+        .createSignedUrl(path, 60 * 10);
+      if (error || !signed?.signedUrl) {
+        return fail(res, 400, error?.message || "Could not open resume file.");
+      }
+
+      res.json({
+        url: signed.signedUrl,
+        file_name: resume.file_name || "resume.pdf",
+      });
     }),
   );
 
@@ -1258,7 +1331,8 @@ function mountCompanyHiringRoutes(admin) {
       if (!canViewHiringPipeline(membership.membership_role)) {
         return fail(res, 403, "Shortlist is for recruiters and hiring managers.");
       }
-      const jobIds = await companyJobIds(req.supabase, membership.company_id);
+      const db = supabaseAdmin() || req.supabase;
+      const jobIds = await companyJobIds(db, membership.company_id);
       if (!jobIds.length) return res.json({ applicants: [] });
 
       const shortlistStatuses = [
@@ -1269,7 +1343,7 @@ function mountCompanyHiringRoutes(admin) {
         "interviewing",
       ];
 
-      let { data, error } = await req.supabase
+      let { data, error } = await db
         .from("applications")
         .select(
           "id, status, match_score, applied_at, cover_letter, how_you_fit, why_role, approved_for_offer, approved_at, ai_screening, candidate_id, job_id, candidates(id, first_name, last_name, profile_image_url, location, user_id), jobs(id, title, location, salary_min, salary_max)",
@@ -1279,7 +1353,7 @@ function mountCompanyHiringRoutes(admin) {
         .order("applied_at", { ascending: false });
 
       if (error && /ai_screening/i.test(error.message || "")) {
-        ({ data, error } = await req.supabase
+        ({ data, error } = await db
           .from("applications")
           .select(
             "id, status, match_score, applied_at, cover_letter, how_you_fit, why_role, approved_for_offer, approved_at, candidate_id, job_id, candidates(id, first_name, last_name, profile_image_url, location, user_id), jobs(id, title, location, salary_min, salary_max)",
@@ -1290,7 +1364,7 @@ function mountCompanyHiringRoutes(admin) {
       }
 
       if (error && /how_you_fit|why_role|approved_for_offer/i.test(error.message || "")) {
-        ({ data, error } = await req.supabase
+        ({ data, error } = await db
           .from("applications")
           .select(
             "id, status, match_score, applied_at, cover_letter, approved_for_offer, approved_at, candidate_id, job_id, candidates(id, first_name, last_name, profile_image_url, location, user_id), jobs(id, title, location, salary_min, salary_max)",
@@ -1301,7 +1375,7 @@ function mountCompanyHiringRoutes(admin) {
       }
 
       if (error && /approved_for_offer|approved_at/i.test(error.message || "")) {
-        ({ data, error } = await req.supabase
+        ({ data, error } = await db
           .from("applications")
           .select(
             "id, status, match_score, applied_at, cover_letter, candidate_id, job_id, candidates(id, first_name, last_name, profile_image_url, location, user_id), jobs(id, title, location, salary_min, salary_max)",
@@ -1325,12 +1399,13 @@ function mountCompanyHiringRoutes(admin) {
       if (!canViewHiringPipeline(membership.membership_role)) {
         return fail(res, 403, "Pipeline is for recruiters and hiring managers.");
       }
-      const jobIds = await companyJobIds(req.supabase, membership.company_id);
+      const db = supabaseAdmin() || req.supabase;
+      const jobIds = await companyJobIds(db, membership.company_id);
       if (!jobIds.length) return res.json({ applicants: [] });
 
       const statusRaw = String(req.query.status || "").trim().toLowerCase();
       const status = statusRaw ? normalizeStage(statusRaw) : "";
-      let query = req.supabase
+      let query = db
         .from("applications")
         .select(
           "id, status, match_score, applied_at, cover_letter, how_you_fit, why_role, approved_for_offer, ai_screening, candidate_id, job_id, candidates(id, first_name, last_name, profile_image_url, location, user_id), jobs(id, title, location, salary_min, salary_max)",
@@ -1342,7 +1417,7 @@ function mountCompanyHiringRoutes(admin) {
 
       let { data, error } = await query;
       if (error && /ai_screening|approved_for_offer|how_you_fit|why_role/i.test(error.message || "")) {
-        let fallback = req.supabase
+        let fallback = db
           .from("applications")
           .select(
             "id, status, match_score, applied_at, cover_letter, candidate_id, job_id, candidates(id, first_name, last_name, profile_image_url, location, user_id), jobs(id, title, location, salary_min, salary_max)",
@@ -1409,6 +1484,7 @@ function mountCompanyHiringRoutes(admin) {
     "/offers",
     asyncHandler(async (req, res) => {
       const membership = await requireRecruiter(req.supabase, req.user.id);
+      const db = supabaseAdmin() || req.supabase;
       const applicationId = Number(req.body?.application_id);
       if (!Number.isFinite(applicationId)) {
         return fail(res, 400, "Pick a shortlisted candidate.");
@@ -1419,7 +1495,7 @@ function mountCompanyHiringRoutes(admin) {
         return fail(res, 400, "Enter a valid CTC / salary.");
       }
 
-      const { data: app, error: appErr } = await req.supabase
+      const { data: app, error: appErr } = await db
         .from("applications")
         .select(
           "id, status, candidate_id, job_id, approved_for_offer, jobs(id, title, location, company_id, companies(name)), candidates(id, user_id, first_name, last_name)",
@@ -1452,6 +1528,7 @@ function mountCompanyHiringRoutes(admin) {
         : null;
 
       const insert = {
+        application_id: app.id,
         candidate_id: app.candidate_id,
         job_id: app.job_id,
         salary,
@@ -1461,11 +1538,11 @@ function mountCompanyHiringRoutes(admin) {
         offer_pdf_url: null,
       };
 
-      let { data: offer, error } = await req.supabase
+      let { data: offer, error } = await db
         .from("offer_letters")
         .insert(insert)
         .select(
-          "id, salary, joining_date, location, offer_pdf_url, status, created_at, candidate_id, job_id",
+          "id, salary, joining_date, location, offer_pdf_url, status, created_at, candidate_id, job_id, application_id",
         )
         .single();
 
@@ -1478,27 +1555,12 @@ function mountCompanyHiringRoutes(admin) {
       }
       if (error) throw new Error(error.message);
 
-      await req.supabase
+      await db
         .from("applications")
         .update({ status: "offer" })
         .eq("id", applicationId);
 
       const cand = unwrap(app.candidates);
-      const companyName = unwrap(job.companies)?.name || "Company";
-      if (cand?.user_id) {
-        await req.supabase.from("notifications").insert({
-          user_id: cand.user_id,
-          notification_type: "offer",
-          title: `Offer from ${companyName}`,
-          message: [
-            `From ${companyName}`,
-            `Role: ${roleTitle || job.title}`,
-            "You received an offer letter. Open Offers to accept or reject.",
-          ].join("\n"),
-          entity_type: "offer",
-          entity_id: offer.id,
-        });
-      }
 
       const name = [cand?.first_name, cand?.last_name]
         .filter(Boolean)
@@ -1545,7 +1607,7 @@ function mountCompanyHiringRoutes(admin) {
       const { data: app, error: appErr } = await req.supabase
         .from("applications")
         .select(
-          "id, candidate_id, job_id, jobs(company_id, title, companies(name)), candidates(user_id, first_name, last_name)",
+          "id, candidate_id, job_id, jobs(company_id, title, companies(name)), candidates(user_id, first_name, last_name, email)",
         )
         .eq("id", applicationId)
         .maybeSingle();
@@ -1557,13 +1619,58 @@ function mountCompanyHiringRoutes(admin) {
       }
 
       const interviewType = String(req.body?.interview_type || "technical").trim();
+      const durationMinutes = Number(req.body?.duration_minutes) || 60;
+      const scheduledIso = new Date(scheduledAt).toISOString();
+      if (Number.isNaN(new Date(scheduledAt).getTime())) {
+        return fail(res, 400, "Pick a valid date and time.");
+      }
+
+      let meetingLink = String(req.body?.meeting_link || "").trim() || null;
+      const createMeetFlag = req.body?.create_google_meet;
+      const wantGoogleMeet =
+        !meetingLink &&
+        (createMeetFlag === true ||
+          createMeetFlag === "true" ||
+          ((createMeetFlag === undefined || createMeetFlag === null) &&
+            googleMeetConfigured()));
+
+      if (wantGoogleMeet) {
+        try {
+          const candName = [unwrap(app.candidates)?.first_name, unwrap(app.candidates)?.last_name]
+            .filter(Boolean)
+            .join(" ")
+            .trim();
+          const meet = await createGoogleMeet({
+            summary: `${interviewType.replace(/_/g, " ")} interview — ${job.title}${candName ? ` — ${candName}` : ""}`,
+            description: [
+              `Elevate interview for ${job.title}.`,
+              `Round: ${interviewType.replace(/_/g, " ")}`,
+              unwrap(job.companies)?.name
+                ? `Company: ${unwrap(job.companies).name}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join("\n"),
+            startIso: scheduledIso,
+            durationMinutes,
+          });
+          meetingLink = meet.meetingLink;
+        } catch (err) {
+          return fail(
+            res,
+            err.status || 502,
+            err.message || "Could not create Google Meet link.",
+          );
+        }
+      }
+
       const insert = {
         application_id: applicationId,
         interviewer_id: interviewerId,
         interview_type: interviewType,
-        scheduled_at: new Date(scheduledAt).toISOString(),
-        duration_minutes: Number(req.body?.duration_minutes) || 60,
-        meeting_link: String(req.body?.meeting_link || "").trim() || null,
+        scheduled_at: scheduledIso,
+        duration_minutes: durationMinutes,
+        meeting_link: meetingLink,
         location: String(req.body?.location || "").trim() || null,
         status: "scheduled",
       };
@@ -1601,22 +1708,43 @@ function mountCompanyHiringRoutes(admin) {
       const cand = unwrap(app.candidates);
       const companyName = unwrap(job.companies)?.name || "Company";
       if (cand?.user_id) {
-        await req.supabase.from("notifications").insert({
-          user_id: cand.user_id,
-          notification_type: "interview",
-          title: `Interview with ${companyName}`,
-          message: [
-            `From ${companyName}`,
-            `Role: ${job.title}`,
-            `Round: ${interviewType.replace(/_/g, " ")}`,
-            `When: ${new Date(scheduledAt).toLocaleString("en-IN")}`,
-            insert.meeting_link ? `Join: ${insert.meeting_link}` : null,
-          ]
-            .filter(Boolean)
-            .join("\n"),
-          entity_type: "interview",
-          entity_id: data.id,
-        });
+        const db = supabaseAdmin() || req.supabase;
+        const ctx = await loadMessageContext(db, applicationId).catch(() => null);
+        const name =
+          [cand.first_name, cand.last_name].filter(Boolean).join(" ").trim() ||
+          "there";
+        const roundName = interviewType.replace(/_/g, " ");
+        const whenLabel = new Date(scheduledAt).toLocaleString("en-IN");
+        const inviteBody = [
+          `Hi ${name},`,
+          "",
+          `You are invited to interview for ${job.title} at ${companyName}.`,
+          "",
+          `Round: ${roundName}`,
+          `When: ${whenLabel}`,
+          insert.meeting_link ? `Join: ${insert.meeting_link}` : null,
+          "",
+          "Please check your Elevate Inbox and Rounds tab for details.",
+          "",
+          "Thank you,",
+          `${companyName} hiring team`,
+        ]
+          .filter((line) => line !== null)
+          .join("\n");
+        try {
+          await sendCandidateMessage(db, {
+            applicationId,
+            companyId: membership.company_id,
+            sentBy: req.user.id,
+            templateKey: "interview_invite",
+            subject: `Interview invite · ${job.title}`,
+            body: inviteBody,
+            candidateUserId: cand.user_id,
+            candidateEmail: ctx?.email || cand.email || null,
+          });
+        } catch {
+          // Scheduling still succeeds if inbox/email fails.
+        }
       }
 
       if (interviewerId && interviewerId !== req.user.id) {
@@ -1627,13 +1755,254 @@ function mountCompanyHiringRoutes(admin) {
           message: [
             `You were assigned an interview for ${job.title}.`,
             `When: ${new Date(scheduledAt).toLocaleString("en-IN")}`,
-          ].join("\n"),
+            insert.meeting_link ? `Join: ${insert.meeting_link}` : null,
+          ]
+            .filter(Boolean)
+            .join("\n"),
           entity_type: "interview",
           entity_id: data.id,
         });
       }
 
       res.status(201).json(data);
+    }),
+  );
+
+  admin.get(
+    "/interviews",
+    asyncHandler(async (req, res) => {
+      const membership = await requireRecruiter(req.supabase, req.user.id);
+      const db = supabaseAdmin() || req.supabase;
+      const interviews = await listCompanyInterviews(db, membership.company_id);
+      res.json({ interviews });
+    }),
+  );
+
+  admin.patch(
+    "/interviews/:id",
+    asyncHandler(async (req, res) => {
+      const membership = await requireRecruiter(req.supabase, req.user.id);
+      const db = supabaseAdmin() || req.supabase;
+      const interviewId = Number(req.params.id);
+      if (!Number.isFinite(interviewId)) {
+        return fail(res, 400, "Invalid interview id.");
+      }
+
+      const found = await getCompanyInterviewRow(
+        db,
+        membership.company_id,
+        interviewId,
+      );
+      if (!found) return fail(res, 404, "Interview not found.");
+      if (String(found.row.status || "").toLowerCase() === "cancelled") {
+        return fail(res, 400, "This interview was cancelled.");
+      }
+      if (
+        ["completed", "ended", "done"].includes(
+          String(found.row.status || "").toLowerCase(),
+        )
+      ) {
+        return fail(res, 400, "Completed interviews cannot be rescheduled.");
+      }
+
+      const patch = {};
+      if (req.body?.scheduled_at != null) {
+        const scheduledAt = String(req.body.scheduled_at || "").trim();
+        if (!scheduledAt) return fail(res, 400, "Pick a date and time.");
+        const scheduledIso = new Date(scheduledAt).toISOString();
+        if (Number.isNaN(new Date(scheduledAt).getTime())) {
+          return fail(res, 400, "Pick a valid date and time.");
+        }
+        patch.scheduled_at = scheduledIso;
+      }
+      if (req.body?.interview_type != null) {
+        patch.interview_type = String(req.body.interview_type || "").trim() ||
+          found.row.interview_type;
+      }
+      if (req.body?.duration_minutes != null) {
+        patch.duration_minutes = Number(req.body.duration_minutes) || 60;
+      }
+      if (req.body?.location !== undefined) {
+        patch.location = String(req.body.location || "").trim() || null;
+      }
+      if (req.body?.interviewer_id != null) {
+        const interviewerId = String(req.body.interviewer_id || "").trim();
+        if (!interviewerId) return fail(res, 400, "Pick an interviewer.");
+        const { data: interviewerMember } = await db
+          .from("company_members")
+          .select("user_id, role")
+          .eq("company_id", membership.company_id)
+          .eq("user_id", interviewerId)
+          .maybeSingle();
+        if (
+          !interviewerMember ||
+          (interviewerMember.role !== "interviewer" &&
+            interviewerMember.role !== "founder")
+        ) {
+          return fail(res, 400, "Pick a company interviewer.");
+        }
+        patch.interviewer_id = interviewerId;
+      }
+
+      let meetingLink =
+        req.body?.meeting_link !== undefined
+          ? String(req.body.meeting_link || "").trim() || null
+          : found.row.meeting_link;
+      const createMeetFlag = req.body?.create_google_meet;
+      const wantGoogleMeet =
+        createMeetFlag === true || createMeetFlag === "true";
+      if (wantGoogleMeet) {
+        try {
+          const startIso =
+            patch.scheduled_at || found.row.scheduled_at;
+          const duration =
+            patch.duration_minutes || found.row.duration_minutes || 60;
+          const type = patch.interview_type || found.row.interview_type;
+          const job = unwrap(unwrap(found.row.applications)?.jobs);
+          const meet = await createGoogleMeet({
+            summary: `${String(type || "interview").replace(/_/g, " ")} interview — ${job?.title || "Role"} — ${found.mapped.candidate_name}`,
+            description: `Rescheduled Elevate interview for ${job?.title || "this role"}.`,
+            startIso,
+            durationMinutes: duration,
+          });
+          meetingLink = meet.meetingLink;
+        } catch (err) {
+          return fail(
+            res,
+            err.status || 502,
+            err.message || "Could not create Google Meet link.",
+          );
+        }
+      }
+      if (req.body?.meeting_link !== undefined || wantGoogleMeet) {
+        patch.meeting_link = meetingLink;
+      }
+
+      if (!Object.keys(patch).length) {
+        return fail(res, 400, "No interview fields to update.");
+      }
+      patch.status = "scheduled";
+
+      const { data, error } = await db
+        .from("interviews")
+        .update(patch)
+        .eq("id", interviewId)
+        .select(
+          "id, interview_type, scheduled_at, duration_minutes, status, meeting_link, interviewer_id",
+        )
+        .single();
+      if (error) throw new Error(error.message);
+
+      await syncApplicationStageFromInterviews(
+        db,
+        found.row.application_id,
+      );
+
+      const whenLabel = new Date(
+        data.scheduled_at || found.row.scheduled_at,
+      ).toLocaleString("en-IN");
+      const companyName = found.mapped.company_name || "Company";
+      await notifyInterview(db, {
+        userId: found.mapped.candidate_user_id,
+        title: `Interview rescheduled with ${companyName}`,
+        lines: [
+          `Your interview for ${found.mapped.job_title} was rescheduled.`,
+          `Round: ${String(data.interview_type || "").replace(/_/g, " ")}`,
+          `When: ${whenLabel}`,
+          data.meeting_link ? `Join: ${data.meeting_link}` : null,
+        ],
+        interviewId,
+      });
+      const nextInterviewerId = data.interviewer_id || found.row.interviewer_id;
+      if (nextInterviewerId && nextInterviewerId !== req.user.id) {
+        await notifyInterview(db, {
+          userId: nextInterviewerId,
+          title: "Interview rescheduled",
+          lines: [
+            `Interview for ${found.mapped.job_title} was rescheduled.`,
+            `Candidate: ${found.mapped.candidate_name}`,
+            `When: ${whenLabel}`,
+            data.meeting_link ? `Join: ${data.meeting_link}` : null,
+          ],
+          interviewId,
+        });
+      }
+
+      res.json(data);
+    }),
+  );
+
+  admin.post(
+    "/interviews/:id/cancel",
+    asyncHandler(async (req, res) => {
+      const membership = await requireRecruiter(req.supabase, req.user.id);
+      const db = supabaseAdmin() || req.supabase;
+      const interviewId = Number(req.params.id);
+      if (!Number.isFinite(interviewId)) {
+        return fail(res, 400, "Invalid interview id.");
+      }
+
+      const found = await getCompanyInterviewRow(
+        db,
+        membership.company_id,
+        interviewId,
+      );
+      if (!found) return fail(res, 404, "Interview not found.");
+      if (String(found.row.status || "").toLowerCase() === "cancelled") {
+        return fail(res, 400, "This interview is already cancelled.");
+      }
+      if (
+        ["completed", "ended", "done"].includes(
+          String(found.row.status || "").toLowerCase(),
+        )
+      ) {
+        return fail(res, 400, "Completed interviews cannot be cancelled.");
+      }
+
+      const { data, error } = await db
+        .from("interviews")
+        .update({ status: "cancelled" })
+        .eq("id", interviewId)
+        .select("id, status, application_id, interviewer_id, scheduled_at")
+        .single();
+      if (error) throw new Error(error.message);
+
+      await syncApplicationStageFromInterviews(
+        db,
+        found.row.application_id,
+      );
+
+      const companyName = found.mapped.company_name || "Company";
+      await notifyInterview(db, {
+        userId: found.mapped.candidate_user_id,
+        title: `Interview cancelled with ${companyName}`,
+        lines: [
+          `Your interview for ${found.mapped.job_title} was cancelled.`,
+          `Round: ${String(found.row.interview_type || "").replace(/_/g, " ")}`,
+        ],
+        interviewId,
+      });
+      if (found.row.interviewer_id && found.row.interviewer_id !== req.user.id) {
+        await notifyInterview(db, {
+          userId: found.row.interviewer_id,
+          title: "Interview cancelled",
+          lines: [
+            `Interview for ${found.mapped.job_title} was cancelled.`,
+            `Candidate: ${found.mapped.candidate_name}`,
+          ],
+          interviewId,
+        });
+      }
+
+      res.json(data);
+    }),
+  );
+
+  admin.get(
+    "/interviews/meet-status",
+    asyncHandler(async (req, res) => {
+      await requireRecruiter(req.supabase, req.user.id);
+      res.json({ configured: googleMeetConfigured() });
     }),
   );
 
@@ -1667,21 +2036,37 @@ function mountCompanyHiringRoutes(admin) {
     "/interviews/assigned",
     asyncHandler(async (req, res) => {
       await requireInterviewer(req.supabase, req.user.id);
+      const db = supabaseAdmin() || req.supabase;
 
-      let { data, error } = await req.supabase
+      const selectFull =
+        "id, interview_type, scheduled_at, duration_minutes, meeting_link, location, status, interviewer_id, feedback_technical, feedback_communication, feedback_problem_solving, feedback_teamwork, feedback_leadership, feedback_overall, feedback_comments, feedback_submitted_at, application_id, applications(id, status, match_score, cover_letter, how_you_fit, why_role, resume_id, ai_screening, candidate_id, candidates(id, first_name, last_name, profile_image_url, location, total_experience_years, professional_summary), jobs(id, title, companies(name)), resumes(id, file_name, file_url, file_type))";
+      const selectMid =
+        "id, interview_type, scheduled_at, duration_minutes, meeting_link, location, status, interviewer_id, feedback_technical, feedback_communication, feedback_problem_solving, feedback_teamwork, feedback_leadership, feedback_overall, feedback_comments, feedback_submitted_at, application_id, applications(id, status, match_score, cover_letter, how_you_fit, why_role, resume_id, ai_screening, candidate_id, candidates(id, first_name, last_name, profile_image_url, location, total_experience_years, professional_summary), jobs(id, title, companies(name)))";
+      const selectBasic =
+        "id, interview_type, scheduled_at, duration_minutes, meeting_link, location, status, interviewer_id, feedback_technical, feedback_communication, feedback_problem_solving, feedback_teamwork, feedback_leadership, feedback_overall, feedback_comments, feedback_submitted_at, application_id, applications(id, status, candidate_id, candidates(id, first_name, last_name, profile_image_url, location), jobs(id, title, companies(name)))";
+
+      let { data, error } = await db
         .from("interviews")
-        .select(
-          "id, interview_type, scheduled_at, duration_minutes, meeting_link, location, status, interviewer_id, feedback_technical, feedback_communication, feedback_problem_solving, feedback_teamwork, feedback_leadership, feedback_overall, feedback_comments, feedback_submitted_at, application_id, applications(id, status, candidate_id, ai_screening, candidates(id, first_name, last_name, profile_image_url, location), jobs(id, title, companies(name)))",
-        )
+        .select(selectFull)
         .eq("interviewer_id", req.user.id)
         .order("scheduled_at", { ascending: true });
 
-      if (error && /ai_screening/i.test(error.message || "")) {
-        ({ data, error } = await req.supabase
+      if (
+        error &&
+        /how_you_fit|why_role|resumes|total_experience|professional_summary|match_score/i.test(
+          error.message || "",
+        )
+      ) {
+        ({ data, error } = await db
           .from("interviews")
-          .select(
-            "id, interview_type, scheduled_at, duration_minutes, meeting_link, location, status, interviewer_id, feedback_technical, feedback_communication, feedback_problem_solving, feedback_teamwork, feedback_leadership, feedback_overall, feedback_comments, feedback_submitted_at, application_id, applications(id, status, candidate_id, candidates(id, first_name, last_name, profile_image_url, location), jobs(id, title, companies(name)))",
-          )
+          .select(selectMid)
+          .eq("interviewer_id", req.user.id)
+          .order("scheduled_at", { ascending: true }));
+      }
+      if (error && /ai_screening/i.test(error.message || "")) {
+        ({ data, error } = await db
+          .from("interviews")
+          .select(selectBasic)
           .eq("interviewer_id", req.user.id)
           .order("scheduled_at", { ascending: true }));
       }
@@ -1695,18 +2080,98 @@ function mountCompanyHiringRoutes(admin) {
       }
       if (error) throw new Error(error.message);
 
+      const rows = data || [];
+      const candidateIds = rows
+        .map((row) => {
+          const app = unwrap(row.applications) || {};
+          const cand = unwrap(app.candidates) || {};
+          return cand.id || app.candidate_id;
+        })
+        .filter(Boolean);
+
+      const skillsById = {};
+      const rolesById = {};
+      if (candidateIds.length) {
+        const { data: skillRows } = await db
+          .from("candidate_skills")
+          .select("candidate_id, skills(name, category)")
+          .in("candidate_id", candidateIds);
+        for (const row of skillRows || []) {
+          const skill = unwrap(row.skills);
+          if (!skill?.name) continue;
+          if (skill.category === "desired_role") {
+            if (!rolesById[row.candidate_id]) rolesById[row.candidate_id] = [];
+            rolesById[row.candidate_id].push(skill.name);
+          } else {
+            if (!skillsById[row.candidate_id]) skillsById[row.candidate_id] = [];
+            skillsById[row.candidate_id].push(skill.name);
+          }
+        }
+      }
+
+      const missingResumeIds = [
+        ...new Set(
+          rows
+            .map((row) => unwrap(row.applications)?.resume_id)
+            .filter(Boolean),
+        ),
+      ].filter(
+        (id) =>
+          !rows.some(
+            (row) => unwrap(unwrap(row.applications)?.resumes)?.id === id,
+          ),
+      );
+      const resumesById = {};
+      if (missingResumeIds.length) {
+        const { data: resumeRows } = await db
+          .from("resumes")
+          .select("id, file_name, file_url, file_type")
+          .in("id", missingResumeIds);
+        for (const resume of resumeRows || []) resumesById[resume.id] = resume;
+      }
+
+      const unsignedResumes = rows
+        .map((row) => {
+          const app = unwrap(row.applications) || {};
+          return unwrap(app.resumes) || resumesById[app.resume_id] || null;
+        })
+        .filter((resume) => resume?.file_url);
+      const signedResumes = await signResumeUrls(db, unsignedResumes);
+      const signedById = {};
+      for (const resume of signedResumes) signedById[resume.id] = resume;
+
+      function parseCoverParts(cover) {
+        const text = String(cover || "");
+        const fitMatch = text.match(
+          /How I fit this role:\s*([\s\S]*?)(?:\n\s*Why I want this role:|$)/i,
+        );
+        const whyMatch = text.match(/Why I want this role:\s*([\s\S]*)$/i);
+        return {
+          fit: fitMatch?.[1]?.trim() || null,
+          why: whyMatch?.[1]?.trim() || null,
+        };
+      }
+
       res.json({
-        interviews: (data || []).map((row) => {
+        interviews: rows.map((row) => {
           const app = unwrap(row.applications) || {};
           const cand = unwrap(app.candidates) || {};
           const job = unwrap(app.jobs) || {};
           const company = unwrap(job.companies);
+          const cid = cand.id || app.candidate_id;
           const name = [cand.first_name, cand.last_name]
             .filter(Boolean)
             .join(" ")
             .trim();
           const screening = app.ai_screening || null;
-          const questions = screening?.questions || null;
+          const parsed = parseCoverParts(app.cover_letter);
+          const skills = skillsById[cid] || [];
+          const openRoles = rolesById[cid] || [];
+          const resume =
+            signedById[app.resume_id] ||
+            unwrap(app.resumes) ||
+            resumesById[app.resume_id] ||
+            null;
           return {
             id: row.id,
             interview_type: row.interview_type,
@@ -1717,12 +2182,21 @@ function mountCompanyHiringRoutes(admin) {
             status: row.status,
             application_id: row.application_id,
             candidate_name: name || "Candidate",
-            candidate_id: cand.id || app.candidate_id,
+            candidate_id: cid,
             profile_image_url: cand.profile_image_url || null,
             candidate_location: cand.location || null,
+            expertise: openRoles[0] || skills[0] || job.title || null,
+            skills,
+            total_experience_years: cand.total_experience_years ?? null,
+            professional_summary: cand.professional_summary || null,
+            how_you_fit: app.how_you_fit || parsed.fit || null,
+            why_role: app.why_role || parsed.why || null,
+            cover_letter: app.cover_letter || null,
+            match_score: app.match_score ?? screening?.match_percentage ?? null,
             job_title: job.title || "Role",
             company_name: company?.name || null,
-            screening_questions: questions,
+            ai_screening: screening,
+            screening_questions: screening?.questions || null,
             match_summary: screening
               ? {
                   match_percentage: screening.match_percentage ?? null,
@@ -1731,6 +2205,21 @@ function mountCompanyHiringRoutes(admin) {
                   recommendation: screening.recommendation || null,
                 }
               : null,
+            resume: resume
+              ? {
+                  id: resume.id,
+                  file_name: resume.file_name,
+                  file_url: resume.file_url,
+                  file_type: resume.file_type,
+                }
+              : app.resume_id
+                ? {
+                    id: app.resume_id,
+                    file_name: "Resume",
+                    file_url: null,
+                    file_type: null,
+                  }
+                : null,
             feedback: row.feedback_submitted_at
               ? {
                   technical: row.feedback_technical,
@@ -1746,6 +2235,58 @@ function mountCompanyHiringRoutes(admin) {
           };
         }),
       });
+    }),
+  );
+
+  admin.post(
+    "/interviews/:id/end",
+    asyncHandler(async (req, res) => {
+      await requireInterviewer(req.supabase, req.user.id);
+      const db = supabaseAdmin() || req.supabase;
+      const interviewId = Number(req.params.id);
+      if (!Number.isFinite(interviewId)) {
+        return fail(res, 400, "Invalid interview id.");
+      }
+
+      const { data: existing, error: findErr } = await db
+        .from("interviews")
+        .select("id, interviewer_id, application_id, status")
+        .eq("id", interviewId)
+        .maybeSingle();
+      if (findErr) throw new Error(findErr.message);
+      if (!existing) return fail(res, 404, "Interview not found.");
+      if (existing.interviewer_id !== req.user.id) {
+        return fail(res, 403, "This interview is not assigned to you.");
+      }
+      const current = String(existing.status || "").toLowerCase();
+      if (current === "cancelled") {
+        return fail(res, 400, "This interview was cancelled.");
+      }
+      if (["ended", "completed", "done"].includes(current)) {
+        return res.json({ id: existing.id, status: existing.status });
+      }
+
+      let { data, error } = await db
+        .from("interviews")
+        .update({ status: "ended" })
+        .eq("id", interviewId)
+        .eq("interviewer_id", req.user.id)
+        .select("id, status, application_id")
+        .single();
+
+      if (error && /status|check|invalid/i.test(error.message || "")) {
+        ({ data, error } = await db
+          .from("interviews")
+          .update({ status: "completed" })
+          .eq("id", interviewId)
+          .eq("interviewer_id", req.user.id)
+          .select("id, status, application_id")
+          .single());
+      }
+      if (error) throw new Error(error.message);
+
+      await syncApplicationStageFromInterviews(db, existing.application_id);
+      res.json(data);
     }),
   );
 
@@ -1824,10 +2365,11 @@ function mountCompanyHiringRoutes(admin) {
     "/applications/:id/feedback",
     asyncHandler(async (req, res) => {
       const membership = await requireHiringManager(req.supabase, req.user.id);
+      const db = supabaseAdmin() || req.supabase;
       const appId = Number(req.params.id);
       if (!Number.isFinite(appId)) return fail(res, 400, "Invalid application id.");
 
-      const { data: app, error: appErr } = await req.supabase
+      const { data: app, error: appErr } = await db
         .from("applications")
         .select("id, job_id, jobs(company_id, title)")
         .eq("id", appId)
@@ -1839,7 +2381,7 @@ function mountCompanyHiringRoutes(admin) {
         return fail(res, 403, "This application is not for your company.");
       }
 
-      let { data, error } = await req.supabase
+      let { data, error } = await db
         .from("interviews")
         .select(
           "id, interview_type, scheduled_at, status, interviewer_id, feedback_technical, feedback_communication, feedback_problem_solving, feedback_teamwork, feedback_leadership, feedback_overall, feedback_comments, feedback_submitted_at, users:interviewer_id(full_name)",
@@ -1848,7 +2390,7 @@ function mountCompanyHiringRoutes(admin) {
         .order("scheduled_at", { ascending: true });
 
       if (error) {
-        ({ data, error } = await req.supabase
+        ({ data, error } = await db
           .from("interviews")
           .select(
             "id, interview_type, scheduled_at, status, interviewer_id, feedback_technical, feedback_communication, feedback_problem_solving, feedback_teamwork, feedback_leadership, feedback_overall, feedback_comments, feedback_submitted_at",
@@ -1884,13 +2426,111 @@ function mountCompanyHiringRoutes(admin) {
     }),
   );
 
+  admin.get(
+    "/applications/:id/messages",
+    asyncHandler(async (req, res) => {
+      const membership = await requireCompanyMember(req.supabase, req.user.id);
+      const db = supabaseAdmin() || req.supabase;
+      const applicationId = Number(req.params.id);
+      if (!Number.isFinite(applicationId)) {
+        return fail(res, 400, "Invalid application id.");
+      }
+
+      const ctx = await loadMessageContext(db, applicationId);
+      if (!ctx) return fail(res, 404, "Application not found.");
+      if (ctx.job.company_id !== membership.company_id) {
+        return fail(res, 403, "This application is not for your company.");
+      }
+
+      if (!canViewHiringPipeline(membership.membership_role)) {
+        if (!canInterview(membership.membership_role)) {
+          return fail(res, 403, "You cannot view these messages.");
+        }
+        const { data: assigned } = await db
+          .from("interviews")
+          .select("id")
+          .eq("application_id", applicationId)
+          .eq("interviewer_id", req.user.id)
+          .limit(1)
+          .maybeSingle();
+        if (!assigned) {
+          return fail(res, 403, "This interview is not assigned to you.");
+        }
+      }
+
+      const { data, error } = await db
+        .from("application_messages")
+        .select(
+          "id, application_id, template_key, subject, body, email_sent, created_at, sent_by",
+        )
+        .eq("application_id", applicationId)
+        .order("created_at", { ascending: true });
+
+      if (error && /application_messages|does not exist|schema cache|relation/i.test(error.message || "")) {
+        return res.json({ messages: [] });
+      }
+      if (error) throw new Error(error.message);
+
+      const senderIds = [
+        ...new Set((data || []).map((row) => row.sent_by).filter(Boolean)),
+      ];
+      let names = {};
+      if (senderIds.length) {
+        const { data: users } = await db
+          .from("users")
+          .select("id, full_name")
+          .in("id", senderIds);
+        for (const user of users || []) names[user.id] = user.full_name || "Teammate";
+      }
+
+      res.json({
+        messages: (data || []).map((row) => ({
+          id: row.id,
+          application_id: row.application_id,
+          template_key: row.template_key,
+          subject: row.subject,
+          body: row.body,
+          email_sent: Boolean(row.email_sent),
+          created_at: row.created_at,
+          sender_name: row.sent_by ? names[row.sent_by] || "Teammate" : "Elevate",
+        })),
+      });
+    }),
+  );
+
+  admin.get(
+    "/notifications",
+    asyncHandler(async (req, res) => {
+      await requireCompanyMember(req.supabase, req.user.id);
+      const db = supabaseAdmin() || req.supabase;
+      const { data, error } = await db
+        .from("notifications")
+        .select(
+          "id, title, message, notification_type, is_read, created_at, entity_type, entity_id",
+        )
+        .eq("user_id", req.user.id)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      if (error && /notifications|does not exist/i.test(error.message || "")) {
+        return res.json({ notifications: [] });
+      }
+      if (error) throw new Error(error.message);
+      res.json({ notifications: data || [] });
+    }),
+  );
+
   admin.post(
     "/messages",
     asyncHandler(async (req, res) => {
-      const membership = await requireRecruiter(req.supabase, req.user.id);
+      const membership = await requireCompanyMember(req.supabase, req.user.id);
+      if (!canViewHiringPipeline(membership.membership_role)) {
+        return fail(res, 403, "Only recruiters and hiring managers can message candidates.");
+      }
+      const db = supabaseAdmin() || req.supabase;
       const applicationId = Number(req.body?.application_id);
       const subject = String(req.body?.subject || "").trim();
       const message = String(req.body?.message || "").trim();
+      const templateKey = String(req.body?.template_key || "").trim() || null;
       if (!Number.isFinite(applicationId)) {
         return fail(res, 400, "Pick a candidate.");
       }
@@ -1898,52 +2538,30 @@ function mountCompanyHiringRoutes(admin) {
         return fail(res, 400, "Subject and message are required.");
       }
 
-      const { data: app, error: appErr } = await req.supabase
-        .from("applications")
-        .select(
-          "id, jobs(company_id, title, companies(name)), candidates(user_id, first_name)",
-        )
-        .eq("id", applicationId)
-        .maybeSingle();
-      if (appErr) throw new Error(appErr.message);
-      if (!app) return fail(res, 404, "Application not found.");
-      const job = unwrap(app.jobs);
-      if (!job || job.company_id !== membership.company_id) {
+      const ctx = await loadMessageContext(db, applicationId);
+      if (!ctx) return fail(res, 404, "Application not found.");
+      if (ctx.job.company_id !== membership.company_id) {
         return fail(res, 403, "This application is not for your company.");
       }
-
-      const cand = unwrap(app.candidates);
-      if (!cand?.user_id) {
+      if (!ctx.cand?.user_id) {
         return fail(res, 400, "Candidate account not found for messaging.");
       }
 
-      const companyName = unwrap(job.companies)?.name || "Company";
-      const jobTitle = job.title || "the role";
-      const composed = [
-        `From ${companyName}`,
-        `Role: ${jobTitle}`,
-        "",
-        message,
-      ].join("\n");
-
-      const { error } = await req.supabase.from("notifications").insert({
-        user_id: cand.user_id,
-        notification_type: "message",
-        title: subject,
-        message: composed,
-        entity_type: "application",
-        entity_id: applicationId,
-      });
-      if (error && /row-level security/i.test(error.message || "")) {
-        return fail(
-          res,
-          403,
-          "Message is blocked by RLS. Run supabase/notifications.sql in the Supabase SQL editor, then try again.",
-        );
+      try {
+        const result = await sendCandidateMessage(db, {
+          applicationId,
+          companyId: membership.company_id,
+          sentBy: req.user.id,
+          templateKey,
+          subject,
+          body: message,
+          candidateUserId: ctx.cand.user_id,
+          candidateEmail: ctx.email,
+        });
+        res.status(201).json({ ok: true, ...result });
+      } catch (err) {
+        return fail(res, err.status || 400, err.message || "Could not send message.");
       }
-      if (error) throw new Error(error.message);
-
-      res.status(201).json({ ok: true });
     }),
   );
 }

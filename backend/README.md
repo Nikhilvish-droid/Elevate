@@ -14,6 +14,25 @@ cp .env.example .env
 
 Fill `SUPABASE_URL` and `SUPABASE_ANON_KEY` (same values as the frontend). For signup / password-reset emails also set `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, and `RESEND_FROM` (see `.env.example`). Do **not** put the DB password or `service_role` key in the frontend.
 
+Hiring messages (shortlist, next round, reject, offer) always land in the candidate **Inbox**. When `RESEND_API_KEY` / `RESEND_FROM` are set, a copy is also emailed. Mail failure never blocks the hiring action.
+
+### Google Meet (optional)
+
+When a recruiter schedules an interview and leaves the meeting link blank, the API can create a Google Calendar event with a Meet join URL.
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), create a project, enable **Google Calendar API**, and create an OAuth client (Desktop or Web).
+2. Add redirect URI `http://127.0.0.1:53682/oauth2callback`.
+3. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `backend/.env`.
+4. From `backend/`:
+
+```bash
+npm run google-meet-auth
+```
+
+5. Sign in with the Google account that should host interviews, then paste `GOOGLE_REFRESH_TOKEN` into `.env`. Restart the API.
+
+Optional: `GOOGLE_CALENDAR_ID` (default `primary`), `GOOGLE_CALENDAR_TIMEZONE` (default `Asia/Kolkata`).
+
 2. Install and run:
 
 ```bash
@@ -47,6 +66,7 @@ Get a token after login: open `http://localhost:3000/api/auth/token`
 | GET | `/api/auth/email-status` | Whether Resend + service role are configured |
 | POST | `/api/auth/send-confirmation` | Email signup confirmation link `{ email, password, redirectTo? }` |
 | POST | `/api/auth/send-recovery` | Email password reset link `{ email, redirectTo? }` |
+| GET/POST/PATCH | `/api/admin/*` | Platform Admin (403 unless `roles.name = admin`) |
 | GET | `/api/profiles/:id` | Public candidate profile (`candidates.id`) |
 | POST | `/api/auth/sync` | Upsert `users` after login, return session profile |
 | GET | `/api/me` | Session profile (role, onboarding, candidate/company) |
@@ -69,6 +89,15 @@ Get a token after login: open `http://localhost:3000/api/auth/token`
 | POST | `/api/company/jobs/:id/duplicate` | Duplicate job |
 | DELETE | `/api/company/jobs/:id` | Delete job |
 | GET | `/api/company/dashboard` | Hiring widgets + funnel + activity |
+| GET | `/api/company/interviews/meet-status` | Whether Google Meet auto-create is configured |
+| GET | `/api/company/interviews` | Company interview schedule |
+| POST | `/api/company/interviews` | Schedule interview (`create_google_meet` optional) |
+| PATCH | `/api/company/interviews/:id` | Reschedule interview |
+| POST | `/api/company/interviews/:id/cancel` | Cancel interview |
+| POST | `/api/company/interviews/:id/end` | Interviewer marks meeting done |
+| GET | `/api/company/applications/:id/messages` | Shared candidate message thread |
+| POST | `/api/company/messages` | Send candidate Inbox (+ Resend if configured) |
+| GET | `/api/company/notifications` | Recruiter / HM in-app notifications |
 | GET/PUT | `/api/candidate/profile` | Candidate profile |
 | GET | `/api/candidate/applications` | Applied jobs |
 | GET | `/api/candidate/interviews` | Interview schedule |
