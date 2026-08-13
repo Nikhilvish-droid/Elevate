@@ -85,7 +85,7 @@ export function isOnboarded(
 export function homeFor(
   user: Pick<
     AppUser,
-    "role" | "team_role" | "membership_role" | "full_name" | "candidate_id" | "id"
+    "role" | "team_role" | "membership_role" | "candidate_id"
   >,
 ) {
   if (user.role === "admin") return "/admin";
@@ -101,7 +101,10 @@ export function homeFor(
 
 /** Login / OAuth landing. Incomplete users always go to onboarding. */
 export function afterAuthPath(
-  user: Pick<AppUser, "role" | "team_role" | "candidate_id" | "company_id">,
+  user: Pick<
+    AppUser,
+    "role" | "team_role" | "membership_role" | "candidate_id" | "company_id"
+  >,
   next?: string | null,
 ) {
   if (!isOnboarded(user)) {
