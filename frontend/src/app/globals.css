@@ -12,8 +12,8 @@
   --brand-deep: #0a4f49;
   --line: #d5e0dc;
   --accent-soft: #e8f3f1;
-  --font-display: var(--font-outfit), ui-sans-serif, sans-serif;
-  --font-body: var(--font-source), ui-sans-serif, sans-serif;
+  --font-display: "Outfit", ui-sans-serif, sans-serif;
+  --font-body: "Source Sans 3", ui-sans-serif, sans-serif;
 }
 
 .dark {

@@ -1,19 +1,6 @@
 import type { Metadata } from "next";
-import { Outfit, Source_Sans_3 } from "next/font/google";
 import { ThemeProvider, themeInitScript } from "@/lib/theme";
 import "./globals.css";
-
-const outfit = Outfit({
-  variable: "--font-outfit",
-  subsets: ["latin"],
-  weight: ["500", "600", "700", "800"],
-});
-
-const sourceSans = Source_Sans_3({
-  variable: "--font-source",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-});
 
 export const metadata: Metadata = {
   title: "Elevate — AI-Powered Recruitment & ATS",
@@ -29,11 +16,19 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning data-scroll-behavior="smooth">
       <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link
+          rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossOrigin="anonymous"
+        />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Source+Sans+3:wght@400;500;600;700&display=swap"
+          rel="stylesheet"
+        />
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
-      <body
-        className={`${outfit.variable} ${sourceSans.variable} flex min-h-screen flex-col bg-surface text-ink antialiased`}
-      >
+      <body className="flex min-h-screen flex-col bg-surface text-ink antialiased">
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
