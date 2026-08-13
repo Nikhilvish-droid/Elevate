@@ -7,7 +7,7 @@ const backend = (
 ).replace(/\/$/, "");
 
 const nextConfig: NextConfig = {
-  output: "standalone",
+  ...(process.env.VERCEL ? {} : { output: "standalone" as const }),
   images: {
     qualities: [75, 100],
   },
