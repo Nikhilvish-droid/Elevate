@@ -1,10 +1,18 @@
 const { supabaseAdmin } = require("../supabase");
 
+function frontendOrigins() {
+  return String(process.env.FRONTEND_ORIGIN || "http://localhost:3000")
+    .split(",")
+    .map((value) => value.trim().replace(/\/$/, ""))
+    .filter(Boolean);
+}
+
 function frontendOrigin() {
-  return (process.env.FRONTEND_ORIGIN || "http://localhost:3000").replace(
-    /\/$/,
-    "",
+  const origins = frontendOrigins();
+  const hosted = origins.find(
+    (origin) => !/localhost|127\.0\.0\.1/.test(origin),
   );
+  return hosted || origins[0] || "http://localhost:3000";
 }
 
 function mailConfigured() {
@@ -166,4 +174,5 @@ module.exports = {
   sendConfirmationEmail,
   sendRecoveryEmail,
   frontendOrigin,
+  frontendOrigins,
 };

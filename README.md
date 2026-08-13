@@ -1,242 +1,183 @@
 # Elevate
 
-**Problem statement:** DevFusion 4.0 — *AI-Powered Recruitment & Applicant Tracking System (ATS)*
-
-Elevate is a full hiring workspace for five roles on one shared data backbone: **Candidate**, **Recruiter**, **Hiring Manager**, **Interviewer**, and **Admin**. Companies post jobs, screen applicants, run interviews, and send offers. Candidates build a profile, apply, track status, and accept or reject offers.
+**Problem statement:** DevFusion 4.0 — AI-Powered Recruitment & Applicant Tracking System (ATS)
 
 ---
 
 ## Brief description
 
-Elevate replaces spreadsheet hiring with a single product:
+Elevate is a hiring platform where companies and candidates work in one system instead of spreadsheets and email threads.
 
-- Candidates sign up (email/password or Google), complete a profile, upload a resume, browse jobs, apply, follow interviews in Inbox, and respond to offers.
-- Recruiters post jobs, review AI match scores, shortlist or reject, schedule rounds (optional Google Meet), message candidates, and send CTC after the hiring manager approves.
-- Hiring managers review shortlists and interviewer feedback, then approve or reject the hire.
-- Interviewers see only assigned rounds, join the meeting, end it, and submit structured scores.
-- Platform admins (seeded, not self-signup) manage users, companies, jobs, RBAC, settings, and audit logs.
+Candidates create a profile, upload a resume, apply to jobs, track application status, receive interview and offer messages in Inbox, and accept or reject offers.
 
-Every hiring decision can open a pre-filled message (shortlist, next round, reject, offer). That message is saved on a shared thread, lands in the candidate **Inbox**, and is emailed via Resend when configured.
+Companies run hiring with five roles: **Recruiter** (jobs, screening, interviews, CTC), **Hiring Manager** (shortlist review, approve/reject hire), **Interviewer** (assigned rounds + feedback), **Founder** (company + team), and **Admin** (platform control).
 
-Application stages stay in sync for every role:
+Every application moves through the same stages:
 
-`Applied → Resume Screening → Shortlisted → Technical Interview → HR Interview → Offer → Hired | Rejected`
+`Applied → Resume Screening → Shortlisted → Technical Interview → HR Interview → Offer → Hired / Rejected`
 
 ---
 
 ## Tech stack
 
-| Layer | Stack |
+| Layer | Technology |
 |---|---|
-| **Frontend** | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4 |
+| **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS 4 |
 | **Backend** | Node.js, Express 5 |
-| **Database & auth** | Supabase (PostgreSQL + Auth + Storage + Row Level Security) |
-| **AI** | Groq API — resume vs job match score, strengths/gaps, interview question bank |
-| **Email** | Resend (signup / password reset + optional hiring emails) |
-| **Meetings** | Google Calendar API (optional auto Google Meet link) |
-| **Resume parse** | `pdf-parse` (PDF), `mammoth` (DOCX) |
-| **Deploy** | Docker Compose (`frontend` + `backend`). Supabase stays hosted. |
-
-The Next.js app talks to the Express API with the Supabase JWT. File uploads (avatars, resumes) go to Supabase Storage from the frontend.
+| **Database & auth** | Supabase (PostgreSQL, Auth, Storage, RLS) |
+| **AI** | Groq API (resume–job match score, strengths/gaps, interview questions) |
+| **Email** | Resend (signup / reset + optional hiring emails) |
+| **Meetings** | Google Calendar API (optional Google Meet links) |
+| **Resume parse** | pdf-parse (PDF), mammoth (DOCX) |
 
 ---
 
-## Step-by-step: run locally
+## Run locally
 
-### Prerequisites
+**Need:** Node.js 20+, npm, and a [Supabase](https://supabase.com) project.
 
-- Node.js 20+
-- npm
-- A [Supabase](https://supabase.com) project
-- (Optional) Docker Desktop, if you prefer Compose instead of two terminals
-
-### 1. Clone and install
+### 1. Install
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/Nikhilvish-droid/Elevate.git
 cd Elevate
 
-cd backend
-npm install
-
-cd ../frontend
-npm install
+cd backend && npm install
+cd ../frontend && npm install
 ```
 
-### 2. Configure environment
+### 2. Environment
 
-**Backend** — copy `backend/.env.example` → `backend/.env`:
+Copy `backend/.env.example` → `backend/.env` and fill:
 
 ```env
 PORT=5000
 FRONTEND_ORIGIN=http://localhost:3000
-SUPABASE_URL=https://your-project-ref.supabase.co
-SUPABASE_ANON_KEY=your_anon_public_key
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_secret
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+GROQ_API_KEY=your_groq_key
 RESEND_API_KEY=
 RESEND_FROM=Elevate <beth.t@example.com>
-GROQ_API_KEY=
 ```
 
-**Frontend** — copy `frontend/.env.example` → `frontend/.env.local`:
+Copy `frontend/.env.example` → `frontend/.env.local`:
 
 ```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_public_key
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
 NEXT_PUBLIC_API_URL=http://localhost:5000
 ```
 
-Use the **same** Supabase URL and anon key on both sides. Never put `service_role` in the frontend.
+Use the same Supabase URL and anon key on both sides. Never put `service_role` in the frontend.
 
-### 3. Run Supabase SQL (in order)
+### 3. Database
 
-In the Supabase SQL editor, run:
+In the Supabase SQL editor, run the scripts in `supabase/` in this order:
 
-1. `supabase/company-join.sql`
-2. `supabase/company-jobs.sql`
-3. `supabase/applications.sql`
-4. `supabase/offer-letters.sql`
-5. `supabase/notifications.sql`
-6. `supabase/application-messages.sql`
-7. `supabase/interview-feedback.sql`
-8. `supabase/ai-screening.sql`
-9. `supabase/resumes-company-read.sql`
-10. `supabase/candidate-profile-fields.sql`
-11. `supabase/delete-account.sql`
-12. `supabase/admin-platform.sql`
+1. `company-join.sql`
+2. `company-jobs.sql`
+3. `applications.sql`
+4. `offer-letters.sql`
+5. `notifications.sql`
+6. `application-messages.sql`
+7. `interview-feedback.sql`
+8. `ai-screening.sql`
+9. `resumes-company-read.sql`
+10. `candidate-profile-fields.sql`
+11. `delete-account.sql`
+12. `admin-platform.sql`
 
-Also create Storage buckets `avatar` and `resumes` if they are not already there, and enable Google (and email) providers in Supabase Auth.
+Create Storage buckets `avatar` and `resumes`. Enable Email and Google in Supabase Auth.
 
-### 4. Start the app
+### 4. Start
 
-Terminal 1 — API:
-
-```bash
-cd backend
-npm run dev
-```
-
-Terminal 2 — web:
+Terminal 1:
 
 ```bash
-cd frontend
-npm run dev
+cd backend && npm run dev
 ```
 
-- Frontend: http://localhost:3000
-- API health: http://localhost:5000/health
+Terminal 2:
 
-Sign up at `/auth`. After onboarding, you land on the dashboard for your role.
+```bash
+cd frontend && npm run dev
+```
 
-Optional platform admin (not self-signup):
+- Frontend: http://localhost:3000  
+- Backend: http://localhost:5000/health  
+
+Sign up at `/auth`, finish onboarding, then use the dashboard for your role.
+
+Optional admin (not self-signup):
 
 ```bash
 cd backend
 node scripts/seed-admin.js admin@elevate.local AdminPass123
 ```
 
-Then log in at `/auth` → `/admin`.
-
-### Optional: Google Meet auto-links
-
-1. Google Cloud → enable Calendar API → OAuth client.
-2. Redirect URI: `http://127.0.0.1:53682/oauth2callback`
-3. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `backend/.env`.
-4. `cd backend && npm run google-meet-auth`
-5. Paste `GOOGLE_REFRESH_TOKEN` into `.env` and restart the API.
-
-### Optional: Docker
-
-```bash
-copy .env.example .env
-```
-
-Fill root `.env` (`NEXT_PUBLIC_SUPABASE_*`) and `backend/.env`, then:
-
-```bash
-docker compose up --build
-```
-
-Same URLs: http://localhost:3000 and http://localhost:5000/health.
-
-If you change `NEXT_PUBLIC_SUPABASE_*`, rebuild (`docker compose up --build`).
-
-To share a **public link** (Cloudflare tunnel or Render), follow **[DEPLOY.md](DEPLOY.md)** step by step.
-
 ---
 
 ## Features built
 
-### Auth & foundation
+**Auth**
+- Email/password and Google login, email verification, password reset
+- Candidate or company onboarding (create a company or request to join)
+- Dark/light theme, delete account
 
-- Email/password signup and login, Google OAuth, email verification and password reset (Resend)
-- Role onboarding: candidate vs company (create company as founder, or request to join)
-- JWT-protected Express API + Supabase RLS
-- Dark / light theme, account delete
-
-### Candidate
-
-- Profile (education, experience, skills, certs, portfolio, GitHub, LinkedIn)
+**Candidate**
+- Profile (education, experience, skills, certifications, GitHub, LinkedIn)
 - Resume upload (PDF/DOCX)
-- Job search and apply with cover / fit answers
-- Application tracker with the shared stage names
-- Inbox with unread orange dot (Home, nav, Profile)
-- Interview schedule (upcoming vs past / ended)
-- Offers: accept or reject CTC
-- Public profile page (`/u/...`)
+- Job search and apply
+- Application tracker with the shared stages
+- Inbox (unread orange dot)
+- Interview schedule (upcoming and past)
+- Accept or reject offer / CTC
+- Public profile page
 
-### Recruiter / founder
-
-- Job create / edit / close / duplicate (salary, skills, work mode, deadline, description)
-- Apps: job-first applicant list, AI match score, stage moves, shortlist / reject + message modal
-- Shortlist, Interview, Email, Offers grouped by job
-- Schedule / reschedule / cancel interviews; assign interviewer; optional Google Meet
+**Recruiter / founder**
+- Post, edit, close, and duplicate jobs
+- Applicants by job, AI match score, shortlist / reject with message modal
+- Schedule / reschedule / cancel interviews, assign interviewer, optional Google Meet
 - Schedule another round after a meeting is ended
-- Shared candidate message thread + compose
-- Offer / CTC after hiring-manager approval (founder can bypass)
-- Company dashboard (funnel, monthly hiring, activity)
-- Founder-only: team join requests, company profile
+- Shared candidate message thread
+- Send CTC after hiring-manager approval (founder can bypass)
+- Hiring dashboard (funnel, monthly hiring)
+- Founder: team join requests and company profile
 
-### Hiring manager
-
-- Home: pending / approved-hired / rejected stay in sync after decisions
-- Shortlist by job + candidate detail + AI screener (no question bank)
-- Feedback by job → see all round scores → Approve / Reject hire with message modal
-- Analytics dashboard (read-only)
+**Hiring manager**
+- Home: pending, approved/hired, rejected
+- Shortlist by job + candidate detail + AI screener
+- Compare interviewer feedback, then approve or reject hire (with message)
+- Analytics (read-only)
 - Cannot post jobs or change company settings
 
-### Interviewer
+**Interviewer**
+- Assigned rounds only
+- Join meeting, end meeting → past meetings
+- Structured scores + comments
+- Read-only message thread (CTC hidden)
+- Cannot see salary fields or send offers
 
-- Assigned rounds only (not the full pipeline)
-- Join meeting, **End meeting** → Past meetings
-- Structured feedback: technical, communication, problem solving, teamwork, leadership, overall + comments
-- Read-only message thread with CTC / salary lines masked
-- Cannot send offers or see salary fields elsewhere
+**Admin**
+- Seeded admin (no self-signup)
+- Users, companies, jobs, audit log, RBAC, settings
+- Non-admin tokens get 403 on `/api/admin/*`
 
-### Admin
-
-- Seeded Admin role (no self-signup)
-- Overview analytics, users, companies, jobs, audit log, RBAC matrix, platform settings
-- Backend RBAC: non-admin tokens get **403** on `/api/admin/*`
-
-### AI & messaging
-
-- On apply: Groq screens resume vs JD → match %, strengths/gaps, interview questions, stage → Resume Screening
-- Recruiter can re-run AI screen from Apps
-- Hiring messages: Inbox always; Resend email if `RESEND_API_KEY` is set (mail failure does not block the hire action)
-- Templates: shortlisted, round advance, rejected, approved for offer, offer CTC, interview invite
-- Recruiter / HM notified in-app when a candidate accepts or declines an offer
+**AI & messaging**
+- On apply: Groq match %, strengths/gaps, interview questions → Resume Screening
+- Recruiter can re-run AI screen
+- Hiring messages: Inbox always; Resend email if configured
+- Templates: shortlisted, next round, rejected, approved, offer CTC, interview invite
 
 ---
 
 ## Live deployment
 
-Follow **[DEPLOY.md](DEPLOY.md)** (Docker Desktop → optional tunnel or Render).
-
 | | URL |
 |---|---|
-| Web app | _Paste your `https://….onrender.com` or tunnel URL here_ |
-| API health | _Paste `https://…/health` here_ |
+| **Frontend** | https://elevatexyz.vercel.app |
+| **Backend** | https://elevate-d8hy.onrender.com/health |
 
 ---
 
@@ -244,41 +185,23 @@ Follow **[DEPLOY.md](DEPLOY.md)** (Docker Desktop → optional tunnel or Render)
 
 | Name | Role |
 |---|---|
-| Nikhil Vishwakarma | Full-stack (API, hiring pipeline, interviews, messaging, Docker) |
-| _Add teammate_ | _e.g. Frontend / Candidate portal_ |
-| _Add teammate_ | _e.g. Recruiter UI / design_ |
-| _Add teammate_ | _e.g. AI screening / assessments_ |
-
-Replace the placeholder rows with every teammate before submission.
+| Nikhil Vishwakarma | Full-stack (backend, hiring pipeline, deployment) |
+| Priyanshu Upadhyay | Frontend (candidate & company UI) |
+| Aniket Tiwari | Frontend (auth, onboarding, UI) |
 
 ---
 
-## Known bugs and limitations
+## Known bugs, limitations, and future work
 
-Honest gaps vs the full DevFusion brief:
+What we have **not** finished yet and plan to build next:
 
-- **Coding assessments** — candidates can see assigned tests/scores. Recruiter test creator, in-browser IDE, timer auto-submit, and tab-switch detection are not built.
-- **Kanban** — stages move with a selector and job-first lists, not a drag-and-drop board.
-- **Offer PDF** — CTC, location, and joining date are stored and messaged; a downloadable branded PDF is not generated (`offer_pdf_url` is usually empty).
-- **AI insight summary** — Groq match + question bank exist. A post-interview LLM summary for the hiring manager is not built (they read structured scores instead).
-- **Resume auto-fill** — screening runs on apply. Full “upload once → auto-fill every profile field” parsing is incomplete.
-- **Calendar reminders** — interview invite goes to Inbox (+ Resend / Meet if configured). No Google Calendar invite for the candidate unless Meet OAuth is set up.
-- **Resend** — without `RESEND_API_KEY`, hiring mail stays in-app only. Signup/reset emails also need Resend + service role.
-- **Admin 2FA / OTP** — not implemented.
-- **Realtime** — Inbox unread uses polling, not WebSockets.
-- **SQL / RLS** — several company writes need `SUPABASE_SERVICE_ROLE_KEY` and the SQL scripts above; skipping them causes RLS errors.
-- **Google Meet** — optional; needs a one-time OAuth refresh token on the machine that hosts the API.
-- **Docker** — Compose does not run Postgres; Supabase remains a hosted dependency.
-
----
-
-## Project layout
-
-```
-Elevate/
-├── frontend/          Next.js app
-├── backend/           Express API
-├── supabase/          SQL to run in Supabase
-├── docker-compose.yml
-└── README.md
-```
+- **Coding assessments** — list/scores exist; test creator, in-browser IDE, timer, auto-submit, and tab-switch detection are not built
+- **Drag-and-drop Kanban** — stages change with a selector and job-first lists, not a drag board
+- **Offer PDF** — CTC, joining date, and location are stored and messaged; branded PDF download is not generated
+- **AI hire summary** — match score + question bank exist; a post-interview LLM summary for the hiring manager is not built
+- **Full resume auto-fill** — screening runs on apply; upload-once auto-fill of every profile field is incomplete
+- **Calendar reminders** — candidate gets Inbox (+ email/Meet if configured); Google Calendar invite for the candidate is not automatic
+- **Admin 2FA / OTP** — not implemented
+- **Realtime inbox** — unread badge uses polling, not WebSockets
+- **Resend** — without `RESEND_API_KEY`, hiring mail is in-app only
+- **Google Meet** — optional; needs OAuth refresh token on the API host

@@ -5,6 +5,7 @@ const {
   sendConfirmationEmail,
   sendRecoveryEmail,
   frontendOrigin,
+  frontendOrigins,
 } = require("../lib/mail");
 
 const router = express.Router();
@@ -39,12 +40,13 @@ function assertCooldown(email) {
 }
 
 function safeRedirect(pathOrUrl) {
+  const allowed = new Set(frontendOrigins());
   const origin = frontendOrigin();
   if (!pathOrUrl) return null;
   if (pathOrUrl.startsWith("/")) return `${origin}${pathOrUrl}`;
   try {
     const u = new URL(pathOrUrl);
-    if (u.origin === origin) return u.toString();
+    if (allowed.has(u.origin)) return u.toString();
   } catch {
     /* ignore */
   }
