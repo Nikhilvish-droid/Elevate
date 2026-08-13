@@ -151,7 +151,7 @@ Then log in at `/auth` → `/admin`.
 copy .env.example .env
 ```
 
-Fill root `.env` (`NEXT_PUBLIC_SUPABASE_*`, `NEXT_PUBLIC_API_URL=http://localhost:5000`) and `backend/.env`, then:
+Fill root `.env` (`NEXT_PUBLIC_SUPABASE_*`) and `backend/.env`, then:
 
 ```bash
 docker compose up --build
@@ -159,7 +159,9 @@ docker compose up --build
 
 Same URLs: http://localhost:3000 and http://localhost:5000/health.
 
-If you change `NEXT_PUBLIC_*` values, rebuild (`docker compose up --build`) — they are baked in at build time.
+If you change `NEXT_PUBLIC_SUPABASE_*`, rebuild (`docker compose up --build`).
+
+To share a **public link** (Cloudflare tunnel or Render), follow **[DEPLOY.md](DEPLOY.md)** step by step.
 
 ---
 
@@ -229,14 +231,12 @@ If you change `NEXT_PUBLIC_*` values, rebuild (`docker compose up --build`) — 
 
 ## Live deployment
 
-**Not deployed yet.** Add the public URL here after hosting (for example Vercel for the frontend + Render/Fly for the API, or a single VM with Docker Compose).
+Follow **[DEPLOY.md](DEPLOY.md)** (Docker Desktop → optional tunnel or Render).
 
 | | URL |
 |---|---|
-| Web app | _TBD — paste production frontend URL_ |
-| API health | _TBD — paste `https://…/health`_ |
-
-Until then, run locally (npm or Docker) as above. For a public host, set `FRONTEND_ORIGIN` and `NEXT_PUBLIC_API_URL` to your real HTTPS URLs. The browser must reach the API; `http://backend:5000` only works inside Docker.
+| Web app | _Paste your `https://….onrender.com` or tunnel URL here_ |
+| API health | _Paste `https://…/health` here_ |
 
 ---
 

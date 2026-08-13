@@ -1,7 +1,10 @@
 import { authFetch } from "@/lib/auth/jwt";
 
-export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+/** Empty = same origin (Next.js proxies /api to the Express backend). */
+export const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(
+  /\/$/,
+  "",
+);
 
 async function parse<T>(res: Response): Promise<T> {
   const data = (await res.json().catch(() => ({}))) as { error?: string } & T;
