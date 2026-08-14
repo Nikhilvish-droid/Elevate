@@ -21,6 +21,8 @@ function certificateStoragePath(fileUrl) {
 }
 
 async function signCertificateUrls(supabase, certs) {
+  const admin = supabaseAdmin();
+  const client = admin || supabase;
   return Promise.all(
     (certs || []).map(async (row) => {
       const path = certificateStoragePath(row.file_url || row.credential_url);
@@ -30,7 +32,7 @@ async function signCertificateUrls(supabase, certs) {
           storage_path: row.file_url || null,
         };
       }
-      const { data } = await supabase.storage
+      const { data } = await client.storage
         .from("certificates")
         .createSignedUrl(path, 60 * 60);
       return {
@@ -143,9 +145,14 @@ async function loadFullProfile(supabase, user, candidateId) {
 }
 
 async function loadPublicProfile(supabase, candidateId) {
-  const cand = await loadCandidateRecord(supabase, candidateId);
+  // Public share + company "View profile" links use this. Related tables
+  // (education / resumes / certs) are often restricted by candidate-only RLS
+  // under the anon client — prefer service role so the full dossier shows.
+  const admin = supabaseAdmin();
+  const db = admin || supabase;
+  const cand = await loadCandidateRecord(db, candidateId);
   if (!cand) return null;
-  const related = await loadRelated(supabase, candidateId);
+  const related = await loadRelated(db, candidateId);
   return {
     id: cand.id,
     first_name: cand.first_name,

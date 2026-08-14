@@ -1,7 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import {
+  getPublicCandidate,
+  type PublicCandidate,
+} from "@/lib/candidate";
 import {
   getApplicationResume,
   type AssignedInterview,
@@ -12,6 +16,19 @@ function meetHref(link?: string | null) {
   const value = String(link || "").trim();
   if (!value) return null;
   return /^https?:\/\//i.test(value) ? value : `https://${value}`;
+}
+
+function monthYear(value: string | null) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value.slice(0, 7);
+  return d.toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+}
+
+function dateRange(start: string | null, end: string | null, current?: boolean) {
+  const from = monthYear(start) || "—";
+  if (current) return `${from} – Present`;
+  return `${from} – ${monthYear(end) || "—"}`;
 }
 
 export function JoinMeetingButton({
@@ -75,6 +92,181 @@ export function QuestionBank({
   );
 }
 
+function ProfileDossier({ profile }: { profile: PublicCandidate }) {
+  const skillTags = (profile.skills || [])
+    .filter((s) => s.category !== "desired_role")
+    .map((s) => s.name);
+  const openTo = (profile.skills || [])
+    .filter((s) => s.category === "desired_role")
+    .map((s) => s.name);
+
+  return (
+    <div className="space-y-4 border-t border-line pt-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+        Full profile
+      </p>
+
+      {profile.professional_summary ? (
+        <div>
+          <p className="font-semibold">About</p>
+          <p className="mt-1 whitespace-pre-wrap text-sm text-muted">
+            {profile.professional_summary}
+          </p>
+        </div>
+      ) : null}
+
+      {openTo.length ? (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+            Open to
+          </p>
+          <ul className="mt-2 flex flex-wrap gap-1.5">
+            {openTo.map((role) => (
+              <li
+                key={role}
+                className="rounded-md bg-soft px-2 py-0.5 text-xs font-semibold text-brand"
+              >
+                {role}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {skillTags.length ? (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+            Skills
+          </p>
+          <ul className="mt-2 flex flex-wrap gap-1.5">
+            {skillTags.map((skill) => (
+              <li
+                key={skill}
+                className="rounded-md border border-line px-2 py-0.5 text-xs font-medium"
+              >
+                {skill}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <div>
+        <p className="font-semibold">Experience</p>
+        {profile.experience?.length ? (
+          <ul className="mt-2 space-y-3">
+            {profile.experience.map((exp) => (
+              <li key={exp.id} className="text-sm">
+                <p className="font-medium">{exp.job_title}</p>
+                <p className="text-muted">
+                  {exp.company_name}
+                  {exp.employment_type ? ` · ${exp.employment_type}` : ""}
+                  {exp.location ? ` · ${exp.location}` : ""}
+                </p>
+                <p className="text-xs text-muted">
+                  {dateRange(exp.start_date, exp.end_date, exp.is_current)}
+                </p>
+                {exp.description ? (
+                  <p className="mt-1 whitespace-pre-wrap text-muted">
+                    {exp.description}
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-1 text-sm text-muted">No experience listed.</p>
+        )}
+      </div>
+
+      <div>
+        <p className="font-semibold">Education</p>
+        {profile.education?.length ? (
+          <ul className="mt-2 space-y-3">
+            {profile.education.map((edu) => (
+              <li key={edu.id} className="text-sm">
+                <p className="font-medium">{edu.institution_name}</p>
+                <p className="text-muted">
+                  {[edu.degree, edu.field_of_study].filter(Boolean).join(" · ") ||
+                    "Program not listed"}
+                </p>
+                <p className="text-xs text-muted">
+                  {dateRange(edu.start_date, edu.end_date)}
+                  {edu.grade ? ` · ${edu.grade}` : ""}
+                </p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-1 text-sm text-muted">No education listed.</p>
+        )}
+      </div>
+
+      <div>
+        <p className="font-semibold">Certifications</p>
+        {profile.certifications?.length ? (
+          <ul className="mt-2 space-y-2 text-sm">
+            {profile.certifications.map((c, i) => (
+              <li
+                key={`${c.certification_name}-${i}`}
+                className="flex flex-wrap items-center justify-between gap-2"
+              >
+                <span>
+                  {c.certification_name}
+                  {c.issuing_organization
+                    ? ` · ${c.issuing_organization}`
+                    : ""}
+                </span>
+                {c.file_url || c.credential_url ? (
+                  <a
+                    href={c.file_url || c.credential_url || "#"}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-semibold text-brand hover:underline"
+                  >
+                    View
+                  </a>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-1 text-sm text-muted">No certifications listed.</p>
+        )}
+      </div>
+
+      {profile.resumes?.length ? (
+        <div>
+          <p className="font-semibold">Resumes on profile</p>
+          <ul className="mt-2 space-y-2 text-sm">
+            {profile.resumes.map((r) => (
+              <li
+                key={r.id}
+                className="flex flex-wrap items-center justify-between gap-2"
+              >
+                <span>
+                  {r.file_name}
+                  {r.is_primary ? " (primary)" : ""}
+                </span>
+                {r.file_url ? (
+                  <a
+                    href={r.file_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-semibold text-brand hover:underline"
+                  >
+                    View resume
+                  </a>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function InterviewCandidateBrief({
   item,
   showQuestions = true,
@@ -84,6 +276,8 @@ export function InterviewCandidateBrief({
 }) {
   const [resumeBusy, setResumeBusy] = useState(false);
   const [resumeError, setResumeError] = useState("");
+  const [dossier, setDossier] = useState<PublicCandidate | null>(null);
+  const [dossierLoading, setDossierLoading] = useState(false);
   const screening = item.ai_screening;
   const skills = item.skills || [];
   const strong = screening?.strong_skills || item.match_summary?.strong_skills || [];
@@ -97,6 +291,25 @@ export function InterviewCandidateBrief({
     screening?.match_percentage ??
     null;
   const hasResume = Boolean(item.resume?.id || item.resume?.file_url);
+
+  useEffect(() => {
+    if (!item.candidate_id) {
+      setDossier(null);
+      return;
+    }
+    let cancelled = false;
+    setDossierLoading(true);
+    getPublicCandidate(item.candidate_id)
+      .then((profile) => {
+        if (!cancelled) setDossier(profile);
+      })
+      .finally(() => {
+        if (!cancelled) setDossierLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [item.candidate_id]);
 
   async function openResume() {
     setResumeError("");
@@ -318,6 +531,14 @@ export function InterviewCandidateBrief({
           ) : null}
         </div>
       </div>
+
+      {dossierLoading ? (
+        <p className="border-t border-line pt-4 text-sm text-muted">
+          Loading full profile…
+        </p>
+      ) : dossier ? (
+        <ProfileDossier profile={dossier} />
+      ) : null}
 
       {showQuestions ? <QuestionBank questions={questions} /> : null}
     </div>

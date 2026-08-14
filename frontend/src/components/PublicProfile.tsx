@@ -57,6 +57,7 @@ export function PublicShell({ children }: { children: ReactNode }) {
   );
 }
 
+/** Full candidate dossier used by /u/[slug] for every role that opens View profile. */
 export function PublicProfileView({
   profile,
 }: {
@@ -69,6 +70,10 @@ export function PublicProfileView({
   const openTo = (profile.skills || [])
     .filter((s) => s.category === "desired_role")
     .map((s) => s.name);
+  const pronouns =
+    profile.show_pronouns_on_profile && profile.pronouns
+      ? profile.pronouns
+      : null;
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
@@ -92,6 +97,7 @@ export function PublicProfileView({
             </h1>
             <p className="mt-1 text-sm text-muted">
               {openTo[0] || "Candidate"}
+              {pronouns ? ` · ${pronouns}` : ""}
               {profile.total_experience_years != null
                 ? ` · ${profile.total_experience_years} yr exp`
                 : ""}
@@ -119,9 +125,9 @@ export function PublicProfileView({
         </p>
       </section>
 
-      {openTo.length ? (
-        <section className="border border-line bg-elevated px-5 py-6 sm:px-7">
-          <h2 className="font-display text-lg font-bold">Open to</h2>
+      <section className="border border-line bg-elevated px-5 py-6 sm:px-7">
+        <h2 className="font-display text-lg font-bold">Open to</h2>
+        {openTo.length ? (
           <ul className="mt-3 flex flex-wrap gap-2">
             {openTo.map((role) => (
               <li
@@ -132,8 +138,10 @@ export function PublicProfileView({
               </li>
             ))}
           </ul>
-        </section>
-      ) : null}
+        ) : (
+          <p className="mt-3 text-sm text-muted">No preferred roles listed.</p>
+        )}
+      </section>
 
       <section className="border border-line bg-elevated px-5 py-6 sm:px-7">
         <h2 className="font-display text-lg font-bold">Skills</h2>
@@ -162,6 +170,7 @@ export function PublicProfileView({
                 <p className="font-semibold">{exp.job_title}</p>
                 <p className="text-sm text-muted">
                   {exp.company_name}
+                  {exp.employment_type ? ` · ${exp.employment_type}` : ""}
                   {exp.location ? ` · ${exp.location}` : ""}
                 </p>
                 <p className="mt-0.5 text-xs text-muted">
@@ -185,7 +194,7 @@ export function PublicProfileView({
         {profile.education?.length ? (
           <ul className="mt-4 space-y-5">
             {profile.education.map((edu) => (
-              <li key={edu.id}>
+              <li key={edu.id} className="border-l-2 border-brand/40 pl-4">
                 <p className="font-semibold">{edu.institution_name}</p>
                 <p className="text-sm text-muted">
                   {[edu.degree, edu.field_of_study].filter(Boolean).join(" · ") ||
@@ -193,6 +202,7 @@ export function PublicProfileView({
                 </p>
                 <p className="mt-0.5 text-xs text-muted">
                   {dateRange(edu.start_date, edu.end_date)}
+                  {edu.grade ? ` · ${edu.grade}` : ""}
                 </p>
               </li>
             ))}
@@ -202,9 +212,9 @@ export function PublicProfileView({
         )}
       </section>
 
-      {profile.resumes?.length ? (
-        <section className="border border-line bg-elevated px-5 py-6 sm:px-7">
-          <h2 className="font-display text-lg font-bold">Resume</h2>
+      <section className="border border-line bg-elevated px-5 py-6 sm:px-7">
+        <h2 className="font-display text-lg font-bold">Resume</h2>
+        {profile.resumes?.length ? (
           <ul className="mt-3 space-y-2">
             {profile.resumes.map((r) => (
               <li
@@ -228,12 +238,14 @@ export function PublicProfileView({
               </li>
             ))}
           </ul>
-        </section>
-      ) : null}
+        ) : (
+          <p className="mt-3 text-sm text-muted">No resume uploaded.</p>
+        )}
+      </section>
 
-      {profile.certifications?.length ? (
-        <section className="border border-line bg-elevated px-5 py-6 sm:px-7">
-          <h2 className="font-display text-lg font-bold">Certifications</h2>
+      <section className="border border-line bg-elevated px-5 py-6 sm:px-7">
+        <h2 className="font-display text-lg font-bold">Certifications</h2>
+        {profile.certifications?.length ? (
           <ul className="mt-3 space-y-2 text-sm">
             {profile.certifications.map((c, i) => (
               <li
@@ -246,21 +258,39 @@ export function PublicProfileView({
                     ? ` · ${c.issuing_organization}`
                     : ""}
                 </span>
-                {c.file_url ? (
-                  <a
-                    href={c.file_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="font-semibold text-brand"
-                  >
-                    View file
-                  </a>
-                ) : null}
+                <span className="flex flex-wrap gap-3">
+                  {c.credential_url ? (
+                    <a
+                      href={
+                        c.credential_url.startsWith("http")
+                          ? c.credential_url
+                          : `https://${c.credential_url}`
+                      }
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-semibold text-brand hover:underline"
+                    >
+                      Credential
+                    </a>
+                  ) : null}
+                  {c.file_url ? (
+                    <a
+                      href={c.file_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-semibold text-brand hover:underline"
+                    >
+                      View file
+                    </a>
+                  ) : null}
+                </span>
               </li>
             ))}
           </ul>
-        </section>
-      ) : null}
+        ) : (
+          <p className="mt-3 text-sm text-muted">No certifications listed.</p>
+        )}
+      </section>
     </div>
   );
 }
