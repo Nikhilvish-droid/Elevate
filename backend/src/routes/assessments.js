@@ -12,7 +12,19 @@ const {
   loadMessageContext,
 } = require("../lib/candidateComms");
 
-function db(req) {
+function assessmentSchemaError(message) {
+  const msg = String(message || "");
+  if (/job_id|company_id|column .*coding_assessments|schema cache/i.test(msg)) {
+    return "coding_assessments is missing job_id / company_id. In Supabase Table Editor add bigint columns job_id and company_id, or run supabase/assessment-jsonb-fallback.sql.";
+  }
+  if (/questions|pass_score|max_violations|description/i.test(msg)) {
+    return "Run supabase/assessment-jsonb-fallback.sql in Supabase (ALTER only — adds questions and related columns).";
+  }
+  if (/answers_json/i.test(msg)) {
+    return "Run supabase/assessment-jsonb-fallback.sql in Supabase first.";
+  }
+  return msg;
+}
   return supabaseAdmin() || req.supabase;
 }
 
@@ -240,7 +252,7 @@ function mountCompanyAssessmentRoutes(admin) {
         .order("created_at", { ascending: false });
       if (Number.isFinite(jobId)) query = query.eq("job_id", jobId);
       const { data, error } = await query;
-      if (error) throw new Error(error.message);
+      if (error) return fail(res, 400, assessmentSchemaError(error.message));
       res.json(await attachJobTitles(db(req), data || [], membership.company_id));
     }),
   );
@@ -278,7 +290,6 @@ function mountCompanyAssessmentRoutes(admin) {
         .select("*")
         .single();
       if (error) {
-        // Fallback without optional columns if schema is older
         if (/column .*questions|pass_score|max_violations|description/i.test(error.message || "")) {
           const retry = await db(req)
             .from("coding_assessments")
@@ -291,10 +302,12 @@ function mountCompanyAssessmentRoutes(admin) {
             })
             .select("*")
             .single();
-          if (retry.error) throw new Error(retry.error.message);
+          if (retry.error) {
+            return fail(res, 400, assessmentSchemaError(retry.error.message));
+          }
           return res.status(201).json({ ...retry.data, questions: [] });
         }
-        throw new Error(error.message);
+        return fail(res, 400, assessmentSchemaError(error.message));
       }
       res.status(201).json({ ...data, questions: asQuestions(data) });
     }),
