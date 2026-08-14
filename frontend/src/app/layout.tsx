@@ -6,6 +6,14 @@ export const metadata: Metadata = {
   title: "Elevate — AI-Powered Recruitment & ATS",
   description:
     "Companies post roles. Candidates apply. One ATS with AI match scores.",
+  icons: {
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon-32.png", type: "image/png", sizes: "32x32" },
+      { url: "/favicon.png", type: "image/png", sizes: "512x512" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+  },
 };
 
 export default function RootLayout({
