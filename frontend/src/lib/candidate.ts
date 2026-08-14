@@ -63,9 +63,10 @@ export type InterviewRow = {
 export type AssessmentAttempt = {
   id: number;
   status: string;
-  started_at: string;
+  started_at: string | null;
   submitted_at: string | null;
   score: number | null;
+  can_start?: boolean;
   coding_assessments: {
     title: string;
     duration_minutes: number | null;

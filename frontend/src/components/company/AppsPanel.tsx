@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { ApplicationAssessmentScores } from "@/components/company/ApplicationAssessmentScores";
 import { ApplicationMessageThread } from "@/components/company/ApplicationMessageThread";
 import { CandidateMessageModal } from "@/components/company/CandidateMessageModal";
 import {
@@ -28,6 +29,7 @@ import { profileSlug } from "@/lib/user";
 type Props = {
   onSchedule?: () => void;
   onEmail?: (applicationId?: number) => void;
+  onTests?: () => void;
 };
 
 const STAGE_OPTIONS = [
@@ -226,6 +228,7 @@ function ApplicantCard({
   onScreen,
   onSchedule,
   onEmail,
+  onTests,
 }: {
   person: JobApplicant;
   jobTitle: string;
@@ -236,6 +239,7 @@ function ApplicantCard({
   onScreen: () => void;
   onSchedule?: () => void;
   onEmail?: (applicationId?: number) => void;
+  onTests?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [resumeBusy, setResumeBusy] = useState(false);
@@ -348,6 +352,15 @@ function ApplicantCard({
               >
                 Interview
               </button>
+              {onTests ? (
+                <button
+                  type="button"
+                  onClick={onTests}
+                  className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold hover:bg-soft"
+                >
+                  Assign test
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => onEmail?.(person.application_id)}
@@ -421,6 +434,7 @@ function ApplicantCard({
 
       {open ? (
         <div className="mt-4 space-y-3 border-t border-line pt-4 text-sm">
+          <ApplicationAssessmentScores applicationId={person.application_id} />
           {hasResume ? (
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -472,7 +486,7 @@ function ApplicantCard({
   );
 }
 
-export function AppsPanel({ onSchedule, onEmail }: Props) {
+export function AppsPanel({ onSchedule, onEmail, onTests }: Props) {
   const [jobs, setJobs] = useState<CompanyJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -682,6 +696,7 @@ export function AppsPanel({ onSchedule, onEmail }: Props) {
                 onScreen={() => screen(person)}
                 onSchedule={onSchedule}
                 onEmail={onEmail}
+                onTests={onTests}
               />
             ))}
           </ul>

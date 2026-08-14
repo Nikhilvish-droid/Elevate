@@ -87,6 +87,9 @@ In the Supabase SQL editor, run the scripts in `supabase/` in this order:
 10. `candidate-profile-fields.sql`
 11. `delete-account.sql`
 12. `admin-platform.sql`
+13. `assessment-jsonb-fallback.sql` (adds JSONB columns on existing assessment tables)
+
+If the assessment tables do not exist yet and your SQL role can CREATE, run `coding-assessments.sql` instead of step 13.
 
 Create Storage buckets `avatar` and `resumes`. Enable Email and Google in Supabase Auth.
 
@@ -132,6 +135,7 @@ node scripts/seed-admin.js admin@elevate.local AdminPass123
 - Application tracker with the shared stages
 - Inbox (unread orange dot)
 - Interview schedule (upcoming and past)
+- Coding assessments (timer, autosave, tab-switch proctoring)
 - Accept or reject offer / CTC
 - Public profile page
 
@@ -141,6 +145,7 @@ node scripts/seed-admin.js admin@elevate.local AdminPass123
 - Schedule / reschedule / cancel interviews, assign interviewer, optional Google Meet
 - Schedule another round after a meeting is ended
 - Shared candidate message thread
+- Assign coding tests after shortlist; review scores on the candidate brief
 - Send CTC after hiring-manager approval (founder can bypass)
 - Hiring dashboard (funnel, monthly hiring)
 - Founder: team join requests and company profile
@@ -195,7 +200,7 @@ node scripts/seed-admin.js admin@elevate.local AdminPass123
 
 What we have **not** finished yet and plan to build next:
 
-- **Coding assessments** — list/scores exist; test creator, in-browser IDE, timer, auto-submit, and tab-switch detection are not built
+- **Coding assessments (bonus)** — recruiter Tests tab, assign, candidate take-test (Monaco/timer/tab-switch), Piston + MCQ scoring. Still open: AI question generation, plagiarism jobs, live dash, Swagger
 - **Drag-and-drop Kanban** — stages change with a selector and job-first lists, not a drag board
 - **Offer PDF** — CTC, joining date, and location are stored and messaged; branded PDF download is not generated
 - **AI hire summary** — match score + question bank exist; a post-interview LLM summary for the hiring manager is not built

@@ -103,7 +103,11 @@ export default function CandidateHome() {
             (i) => i.status === "scheduled" && new Date(i.scheduled_at) >= new Date(),
           ).length,
         );
-        setTests(assessments.filter((a) => a.status === "in_progress").length);
+        setTests(
+          assessments.filter((a) =>
+            ["assigned", "in_progress"].includes(a.status),
+          ).length,
+        );
         setOffers(offerList.filter((o) => o.status === "sent").length);
         setUnread(notes.filter((n) => !n.is_read).length);
         setScore(analysis?.match_percentage ?? null);

@@ -72,6 +72,20 @@ Please check your Elevate Inbox and Rounds tab for time and meeting link.
 Thank you,
 {{company}} hiring team`,
   },
+  assessment_assigned: {
+    subject: "Coding assessment assigned · {{job}}",
+    body: `Hi {{name}},
+
+You have been assigned a coding assessment for {{job}} at {{company}}.
+
+Test: {{test}}
+Duration: {{duration}} minutes
+
+Open the Tests tab in Elevate to start when you are ready. The timer begins when you open the test.
+
+Thank you,
+{{company}} hiring team`,
+  },
 };
 
 function fillTemplate(text, vars) {

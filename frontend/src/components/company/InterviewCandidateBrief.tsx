@@ -11,6 +11,7 @@ import {
   type AssignedInterview,
 } from "@/lib/companyJobs";
 import { profileSlug } from "@/lib/user";
+import { ApplicationAssessmentScores } from "@/components/company/ApplicationAssessmentScores";
 
 function meetHref(link?: string | null) {
   const value = String(link || "").trim();
@@ -481,6 +482,9 @@ export function InterviewCandidateBrief({
           </p>
         </div>
       ) : null}
+
+      <ApplicationAssessmentScores applicationId={item.application_id} />
+
       {item.why_role ? (
         <div>
           <p className="font-semibold">Why this role</p>

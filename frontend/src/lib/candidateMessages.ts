@@ -3,7 +3,8 @@ export type MessageKind =
   | "round_advance"
   | "rejected"
   | "approved"
-  | "offer_ctc";
+  | "offer_ctc"
+  | "assessment_assigned";
 
 export type MessageVars = {
   name?: string;
@@ -13,6 +14,8 @@ export type MessageVars = {
   ctc?: string;
   location?: string;
   joining_date?: string;
+  test?: string;
+  duration?: string;
 };
 
 const TEMPLATES: Record<MessageKind, { subject: string; body: string }> = {
@@ -73,6 +76,20 @@ Joining date: {{joining_date}}
 
 Open Offers in your Elevate account to accept or reject this offer.
 
+{{company}} hiring team`,
+  },
+  assessment_assigned: {
+    subject: "Coding assessment assigned · {{job}}",
+    body: `Hi {{name}},
+
+You have been assigned a coding assessment for {{job}} at {{company}}.
+
+Test: {{test}}
+Duration: {{duration}} minutes
+
+Open the Tests tab in Elevate to start when you are ready. The timer begins when you open the test.
+
+Thank you,
 {{company}} hiring team`,
   },
 };

@@ -4,8 +4,10 @@ const { getCandidateId } = require("../lib/users");
 const { loadFullProfile } = require("../lib/candidateProfile");
 const { replaceEducation, replaceExperience, replaceCertifications } = require("../lib/candidateSave");
 const { supabaseAdmin } = require("../supabase");
+const { mountCandidateAssessmentRoutes } = require("./assessments");
 
 const router = express.Router();
+mountCandidateAssessmentRoutes(router);
 
 async function syncSkillNames(supabase, candidateId, names, category) {
   const clean = (names || []).map((n) => String(n).trim()).filter(Boolean);
@@ -188,24 +190,6 @@ router.get(
           : row.applications,
       })),
     );
-  }),
-);
-
-router.get(
-  "/assessments",
-  asyncHandler(async (req, res) => {
-    const candidateId = await getCandidateId(req.supabase, req.user.id);
-    if (!candidateId) return res.json([]);
-
-    const { data, error } = await req.supabase
-      .from("assessment_attempts")
-      .select(
-        "id, status, started_at, submitted_at, score, coding_assessments(title, duration_minutes, description)",
-      )
-      .eq("candidate_id", candidateId)
-      .order("started_at", { ascending: false });
-    if (error) throw new Error(error.message);
-    res.json(data || []);
   }),
 );
 

@@ -5,6 +5,7 @@ import {
   DashShell,
   IconBrief,
   IconCal,
+  IconCheck,
   IconHome,
   IconList,
   IconMsg,
@@ -14,6 +15,7 @@ import {
 } from "@/components/DashShell";
 import { KeepAlive } from "@/components/KeepAlive";
 import { AppsPanel } from "@/components/company/AppsPanel";
+import { AssessmentsPanel } from "@/components/company/AssessmentsPanel";
 import { CompanyDashboardPanel } from "@/components/company/CompanyDashboard";
 import { CompanyInboxNote } from "@/components/company/CompanyInboxNote";
 import { HomeCandidatesPanel } from "@/components/company/HomeCandidatesPanel";
@@ -41,6 +43,7 @@ type View =
   | "profiles"
   | "apps"
   | "shortlist"
+  | "tests"
   | "interviews"
   | "email"
   | "offers"
@@ -145,6 +148,7 @@ export default function RecruiterPage() {
     { label: "Jobs", icon: <IconBrief />, id: "jobs" as View },
     { label: "Apps", icon: <IconList />, id: "apps" as View },
     { label: "Shortlist", icon: <IconStar />, id: "shortlist" as View },
+    { label: "Tests", icon: <IconCheck />, id: "tests" as View },
     { label: "Interview", icon: <IconCal />, id: "interviews" as View },
     { label: "Email", icon: <IconMsg />, id: "email" as View },
     { label: "Offers", icon: <IconOffer />, id: "offers" as View },
@@ -231,6 +235,7 @@ export default function RecruiterPage() {
               setEmailApplicationId(applicationId ?? null);
               setView("email");
             }}
+            onTests={() => setView("tests")}
           />
         </KeepAlive>
 
@@ -243,6 +248,10 @@ export default function RecruiterPage() {
             }}
             onOffer={() => setView("offers")}
           />
+        </KeepAlive>
+
+        <KeepAlive active={view === "tests"}>
+          <AssessmentsPanel />
         </KeepAlive>
 
         <KeepAlive active={view === "interviews"}>

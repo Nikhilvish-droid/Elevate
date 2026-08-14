@@ -8,10 +8,12 @@ const {
   membershipLabel,
 } = require("../lib/company");
 const { mountCompanyHiringRoutes } = require("./companyHiring");
+const { mountCompanyAssessmentRoutes } = require("./assessments");
 
 const requests = express.Router();
 const admin = express.Router();
 mountCompanyHiringRoutes(admin);
+mountCompanyAssessmentRoutes(admin);
 
 requests.post(
   "/",
