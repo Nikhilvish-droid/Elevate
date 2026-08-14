@@ -14,6 +14,7 @@ const KIND_LABEL: Record<MessageKind, string> = {
   rejected: "Not selected",
   approved: "Approved for offer",
   offer_ctc: "Offer / CTC",
+  assessment_assigned: "Coding assessment",
 };
 
 export function CandidateMessageModal({

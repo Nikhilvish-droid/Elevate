@@ -132,14 +132,14 @@ export function AssessmentsPanel() {
     setError("");
     try {
       let options: string[] = [];
-      let test_cases: { stdin: string; stdout: string }[] = [];
+      let test_cases: { stdin?: string; stdout?: string; expected?: string }[] = [];
       if (qType === "mcq") {
         options = qOptions
           .split("\n")
           .map((line) => line.trim())
           .filter(Boolean);
       } else {
-        test_cases = JSON.parse(qCases);
+        test_cases = JSON.parse(qCases) as { stdin?: string; stdout?: string; expected?: string }[];
         if (!test_cases.some((tc) => String(tc.stdout || tc.expected || "").trim())) {
           setError("Add expected output to at least one test case.");
           setBusy(false);
