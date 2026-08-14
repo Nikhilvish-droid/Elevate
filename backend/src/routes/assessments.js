@@ -25,6 +25,8 @@ function assessmentSchemaError(message) {
   }
   return msg;
 }
+
+function db(req) {
   return supabaseAdmin() || req.supabase;
 }
 
