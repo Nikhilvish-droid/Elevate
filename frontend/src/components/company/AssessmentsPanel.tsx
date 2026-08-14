@@ -53,21 +53,37 @@ export function AssessmentsPanel() {
     setLoading(true);
     setError("");
     try {
-      const [jobList, assessments, apps] = await Promise.all([
-        listCompanyJobs().catch(() => [] as CompanyJob[]),
+      const [jobRes, assessRes, appsRes] = await Promise.allSettled([
+        listCompanyJobs(),
         listCompanyAssessments(),
-        listPipelineApplicants().catch(() => []),
+        listPipelineApplicants(),
       ]);
-      setJobs(jobList);
-      setRows(assessments);
-      setPipeline(
-        apps.map((row) => ({
-          application_id: row.application_id,
-          full_name: row.full_name,
-          job: row.job,
-          status: row.status,
-        })),
-      );
+
+      if (jobRes.status === "fulfilled") setJobs(jobRes.value);
+      else setJobs([]);
+
+      if (assessRes.status === "fulfilled") setRows(assessRes.value);
+      else {
+        setRows([]);
+        setError(
+          assessRes.reason instanceof Error
+            ? assessRes.reason.message
+            : "Could not load assessments.",
+        );
+      }
+
+      if (appsRes.status === "fulfilled") {
+        setPipeline(
+          appsRes.value.map((row) => ({
+            application_id: row.application_id,
+            full_name: row.full_name,
+            job: row.job,
+            status: row.status,
+          })),
+        );
+      } else {
+        setPipeline([]);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load assessments.");
     } finally {
@@ -262,12 +278,21 @@ export function AssessmentsPanel() {
               required
             >
               <option value="">Select job</option>
-              {jobs.map((job) => (
+              {jobs
+                .filter((job) => job.status !== "closed")
+                .map((job) => (
                 <option key={job.id} value={job.id}>
                   {job.title}
+                  {job.status === "draft" ? " (draft)" : ""}
                 </option>
               ))}
             </select>
+            {jobs.filter((job) => job.status !== "closed").length === 0 ? (
+              <span className="mt-1 block text-xs text-muted">
+                No open jobs yet. Post a job under Jobs first, then create a
+                test.
+              </span>
+            ) : null}
           </label>
           <label className="block text-sm">
             <span className="font-medium">Title</span>

@@ -150,6 +150,27 @@ function normalizeTestCases(raw) {
   }));
 }
 
+async function attachJobTitles(client, rows, companyId) {
+  const list = Array.isArray(rows) ? rows : [];
+  const ids = [
+    ...new Set(
+      list.map((row) => Number(row.job_id)).filter(Number.isFinite),
+    ),
+  ];
+  if (!ids.length) return list.map((row) => ({ ...row, job_title: null }));
+
+  const { data: jobs } = await client
+    .from("jobs")
+    .select("id, title")
+    .eq("company_id", companyId)
+    .in("id", ids);
+  const titles = new Map((jobs || []).map((job) => [Number(job.id), job.title]));
+  return list.map((row) => ({
+    ...row,
+    job_title: titles.get(Number(row.job_id)) || null,
+  }));
+}
+
 async function loadAssessmentOwned(client, assessmentId, companyId) {
   const { data, error } = await client
     .from("coding_assessments")
@@ -213,20 +234,14 @@ function mountCompanyAssessmentRoutes(admin) {
       let query = db(req)
         .from("coding_assessments")
         .select(
-          "id, job_id, company_id, title, description, duration_minutes, pass_score, max_violations, created_at, jobs(title)",
+          "id, job_id, company_id, title, description, duration_minutes, pass_score, max_violations, created_at",
         )
         .eq("company_id", membership.company_id)
         .order("created_at", { ascending: false });
       if (Number.isFinite(jobId)) query = query.eq("job_id", jobId);
       const { data, error } = await query;
       if (error) throw new Error(error.message);
-      res.json(
-        (data || []).map((row) => ({
-          ...row,
-          job_title: unwrap(row.jobs)?.title || null,
-          jobs: undefined,
-        })),
-      );
+      res.json(await attachJobTitles(db(req), data || [], membership.company_id));
     }),
   );
 
