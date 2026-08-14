@@ -177,6 +177,15 @@ node scripts/seed-admin.js admin@elevate.local AdminPass123
 
 ---
 
+existing user email and password
+
+admin-admintest@elevate.com / adminpass9890263550
+candidate- candidate3@gmail.com / 123456789
+company- comapnyprofile@gmail.com/ @Company123
+recruiter of another company - recruiter1@gmail.com / 123456789
+interviewer - interviewer1@gmail.com / 123456789
+hiringmanager - hiringmanager1@gmail.com / 123456789
+
 ## Live deployment
 
 | | URL |
