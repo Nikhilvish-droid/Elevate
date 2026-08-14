@@ -8,6 +8,7 @@ import {
   IconList,
   IconUsers,
 } from "@/components/DashShell";
+import { KeepAlive } from "@/components/KeepAlive";
 import {
   createAdminUser,
   getAdminOverview,
@@ -132,23 +133,27 @@ export default function AdminPage() {
           </p>
         ) : null}
 
-        {view === "overview" ? <OverviewPanel onError={setError} /> : null}
-        {view === "users" ? (
+        <KeepAlive active={view === "overview"}>
+          <OverviewPanel onError={setError} />
+        </KeepAlive>
+        <KeepAlive active={view === "users"}>
           <UsersPanel onError={setError} onMessage={setMessage} />
-        ) : null}
-        {view === "companies" ? (
+        </KeepAlive>
+        <KeepAlive active={view === "companies"}>
           <CompaniesPanel onError={setError} onMessage={setMessage} />
-        ) : null}
-        {view === "jobs" ? (
+        </KeepAlive>
+        <KeepAlive active={view === "jobs"}>
           <JobsPanel onError={setError} onMessage={setMessage} />
-        ) : null}
-        {view === "audit" ? <AuditPanel onError={setError} /> : null}
-        {view === "permissions" ? (
+        </KeepAlive>
+        <KeepAlive active={view === "audit"}>
+          <AuditPanel onError={setError} />
+        </KeepAlive>
+        <KeepAlive active={view === "permissions"}>
           <PermissionsPanel onError={setError} onMessage={setMessage} />
-        ) : null}
-        {view === "settings" ? (
+        </KeepAlive>
+        <KeepAlive active={view === "settings"}>
           <SettingsPanel onError={setError} onMessage={setMessage} />
-        ) : null}
+        </KeepAlive>
       </div>
     </DashShell>
   );

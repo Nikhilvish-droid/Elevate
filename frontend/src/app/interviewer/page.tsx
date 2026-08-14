@@ -174,8 +174,8 @@ export default function InterviewerPage() {
     try {
       await endCompanyInterview(id);
       setConfirmEndId(null);
-      setMessage("Meeting marked as done. It now appears under Past meetings.");
-      if (view === "detail") setView("rounds");
+      setMessage("Meeting marked as done. Submit your feedback below.");
+      openFeedback(id);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not end meeting.");

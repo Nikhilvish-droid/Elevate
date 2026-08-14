@@ -29,17 +29,35 @@ function isPast(row: InterviewRow) {
   return new Date(row.scheduled_at).getTime() < Date.now() - 30 * 60 * 1000;
 }
 
+function isMeetingEnded(row: InterviewRow) {
+  const status = String(row.status || "").toLowerCase();
+  return ["completed", "ended", "done"].includes(status) || isPast(row);
+}
+
+function statusLabel(row: InterviewRow) {
+  const status = String(row.status || "").toLowerCase();
+  if (["completed", "ended", "done"].includes(status) || isPast(row)) {
+    if (status === "cancelled") return "Cancelled";
+    if (status === "no_show") return "No show";
+    return "Meeting ended";
+  }
+  return String(row.status || "scheduled").replace(/_/g, " ");
+}
+
 function RoundCard({
   row,
   badge,
+  ended = false,
 }: {
   row: InterviewRow;
   badge: string;
+  ended?: boolean;
 }) {
   const when = new Date(row.scheduled_at);
   const link = row.meeting_link?.trim();
   const href =
     link && !/^https?:\/\//i.test(link) ? `https://${link}` : link || null;
+  const meetingOver = ended || isMeetingEnded(row);
 
   return (
     <li className="border border-line bg-elevated px-5 py-5">
@@ -50,7 +68,7 @@ function RoundCard({
               {badge}
             </span>
             <span className="text-xs font-semibold capitalize text-brand">
-              {String(row.status || "").replace(/_/g, " ")}
+              {statusLabel(row)}
             </span>
           </div>
           <p className="mt-2 font-semibold">{jobTitleOf(row)}</p>
@@ -70,7 +88,9 @@ function RoundCard({
         </div>
       </div>
 
-      {href ? (
+      {meetingOver ? (
+        <p className="mt-4 text-sm font-semibold text-muted">Meeting ended</p>
+      ) : href ? (
         <a
           href={href}
           target="_blank"
@@ -162,7 +182,7 @@ export default function InterviewsPage() {
             {previous.length ? (
               <ul className="mt-3 space-y-3">
                 {previous.map((row) => (
-                  <RoundCard key={row.id} row={row} badge="Done" />
+                  <RoundCard key={row.id} row={row} badge="Done" ended />
                 ))}
               </ul>
             ) : (

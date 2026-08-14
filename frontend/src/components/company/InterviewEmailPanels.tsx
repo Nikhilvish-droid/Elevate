@@ -694,44 +694,51 @@ export function EmailPanel({
   const candidates = activeJob?.items ?? [];
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
         const [list, ws] = await Promise.all([
           listPipelineApplicants(),
           getCompanyWorkspace().catch(() => null),
         ]);
+        if (cancelled) return;
         setRows(list);
-        const company = ws?.company?.name || "Company";
-        if (ws?.company?.name) setCompanyName(company);
-        if (initialApplicationId) {
-          const person = list.find(
-            (row) => row.application_id === initialApplicationId,
-          );
-          if (person) {
-            setSelectedJobId(person.job.id);
-            setApplicationId(person.application_id);
-            const kind = emailKindFor(person);
-            const draft = draftCandidateMessage(kind, {
-              name: person.full_name,
-              job: person.job.title,
-              company,
-              round:
-                String(person.status || "").toLowerCase() === "hr_interview"
-                  ? "HR"
-                  : "technical",
-              location: person.job.location || "TBD",
-            });
-            setSubject(draft.subject);
-            setBody(draft.body);
-          }
-        }
+        if (ws?.company?.name) setCompanyName(ws.company.name);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not load candidates.");
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Could not load candidates.");
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
-  }, [initialApplicationId]);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!initialApplicationId || !rows.length) return;
+    const person = rows.find(
+      (row) => row.application_id === initialApplicationId,
+    );
+    if (!person) return;
+    setSelectedJobId(person.job.id);
+    setApplicationId(person.application_id);
+    const kind = emailKindFor(person);
+    const draft = draftCandidateMessage(kind, {
+      name: person.full_name,
+      job: person.job.title,
+      company: companyName,
+      round:
+        String(person.status || "").toLowerCase() === "hr_interview"
+          ? "HR"
+          : "technical",
+      location: person.job.location || "TBD",
+    });
+    setSubject(draft.subject);
+    setBody(draft.body);
+  }, [initialApplicationId, rows, companyName]);
 
   function fillDraft(person: PipelineApplicant | undefined, jobTitle?: string) {
     if (!person) return;

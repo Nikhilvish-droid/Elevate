@@ -60,7 +60,7 @@ export function CandidatePortal({ children }: { children: ReactNode }) {
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("elevate-inbox", onInbox);
     };
-  }, [path]);
+  }, []);
 
   const nav = [
     { href: "/candidate", label: "Home", icon: <IconHome /> },

@@ -12,6 +12,7 @@ import {
   IconStar,
   IconUsers,
 } from "@/components/DashShell";
+import { KeepAlive } from "@/components/KeepAlive";
 import { AppsPanel } from "@/components/company/AppsPanel";
 import { CompanyDashboardPanel } from "@/components/company/CompanyDashboard";
 import { CompanyInboxNote } from "@/components/company/CompanyInboxNote";
@@ -176,35 +177,35 @@ export default function RecruiterPage() {
       }))}
     >
       <div className="mx-auto max-w-3xl">
-        {view === "home" ? (
-          <>
-            <ProfileCard
-              company={company}
-              name={name}
-              title={title}
-              logoUrl={workspace?.company.logo_url}
-              canPost={canManageJobs}
-              isFounder={isFounder}
-              hiringActive={hiringActive}
-              onToggleHiring={() => {
-                if (!user?.id) return;
-                const next: PresenceStatus = hiringActive ? "away" : "active";
-                setPresence(user.id, next);
-                setHiringActive(next === "active");
-              }}
-              onPost={goPostJob}
-              onTeam={() => setView("team")}
-              onProfiles={() => setView("profiles")}
-              onDashboard={() => setView("dashboard")}
-            />
-            <CompanyInboxNote />
-            <HomeCandidatesPanel />
-          </>
-        ) : null}
+        <KeepAlive active={view === "home"}>
+          <ProfileCard
+            company={company}
+            name={name}
+            title={title}
+            logoUrl={workspace?.company.logo_url}
+            canPost={canManageJobs}
+            isFounder={isFounder}
+            hiringActive={hiringActive}
+            onToggleHiring={() => {
+              if (!user?.id) return;
+              const next: PresenceStatus = hiringActive ? "away" : "active";
+              setPresence(user.id, next);
+              setHiringActive(next === "active");
+            }}
+            onPost={goPostJob}
+            onTeam={() => setView("team")}
+            onProfiles={() => setView("profiles")}
+            onDashboard={() => setView("dashboard")}
+          />
+          <CompanyInboxNote />
+          <HomeCandidatesPanel />
+        </KeepAlive>
 
-        {view === "dashboard" ? <CompanyDashboardPanel /> : null}
+        <KeepAlive active={view === "dashboard"}>
+          <CompanyDashboardPanel />
+        </KeepAlive>
 
-        {view === "jobs" ? (
+        <KeepAlive active={view === "jobs"}>
           <JobsPanel
             canManage={canManageJobs}
             companyName={company}
@@ -212,18 +213,18 @@ export default function RecruiterPage() {
             openCreate={openJobCreate}
             onCreateHandled={() => setOpenJobCreate(false)}
           />
-        ) : null}
+        </KeepAlive>
 
-        {view === "profiles" ? (
+        <KeepAlive active={view === "profiles"}>
           <ProfilesPanel
             onProfileUpdated={(profile) => {
               setLocal(profile);
               loadWorkspace();
             }}
           />
-        ) : null}
+        </KeepAlive>
 
-        {view === "apps" ? (
+        <KeepAlive active={view === "apps"}>
           <AppsPanel
             onSchedule={() => setView("interviews")}
             onEmail={(applicationId) => {
@@ -231,9 +232,9 @@ export default function RecruiterPage() {
               setView("email");
             }}
           />
-        ) : null}
+        </KeepAlive>
 
-        {view === "shortlist" ? (
+        <KeepAlive active={view === "shortlist"}>
           <ShortlistPanel
             onSchedule={() => setView("interviews")}
             onEmail={(applicationId) => {
@@ -242,15 +243,17 @@ export default function RecruiterPage() {
             }}
             onOffer={() => setView("offers")}
           />
-        ) : null}
+        </KeepAlive>
 
-        {view === "interviews" ? <InterviewPanel /> : null}
+        <KeepAlive active={view === "interviews"}>
+          <InterviewPanel />
+        </KeepAlive>
 
-        {view === "email" ? (
+        <KeepAlive active={view === "email"}>
           <EmailPanel initialApplicationId={emailApplicationId} />
-        ) : null}
+        </KeepAlive>
 
-        {view === "team" ? (
+        <KeepAlive active={view === "team"}>
           <TeamPanel
             team={team}
             error={teamError}
@@ -271,9 +274,11 @@ export default function RecruiterPage() {
               }
             }}
           />
-        ) : null}
+        </KeepAlive>
 
-        {view === "offers" ? <OffersPanel isFounder={isFounder} /> : null}
+        <KeepAlive active={view === "offers"}>
+          <OffersPanel isFounder={isFounder} />
+        </KeepAlive>
       </div>
     </DashShell>
   );

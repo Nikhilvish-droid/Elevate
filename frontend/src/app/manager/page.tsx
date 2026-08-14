@@ -15,6 +15,7 @@ import { CompanyDashboardPanel } from "@/components/company/CompanyDashboard";
 import { CompanyInboxNote } from "@/components/company/CompanyInboxNote";
 import { InterviewCandidateBrief } from "@/components/company/InterviewCandidateBrief";
 import { BackToJobs, JobPickList } from "@/components/company/JobPickList";
+import { KeepAlive } from "@/components/KeepAlive";
 import { normalizeAppStage, stageLabel } from "@/lib/candidate";
 import {
   approveApplication,
@@ -235,8 +236,8 @@ export default function ManagerPage() {
   }
 
   function go(next: View) {
+    if (next !== view) resetDrilldown();
     setView(next);
-    resetDrilldown();
     setError("");
     setMessage("");
   }
@@ -808,7 +809,9 @@ export default function ManagerPage() {
           </section>
         ) : null}
 
-        {view === "analytics" ? <CompanyDashboardPanel /> : null}
+        <KeepAlive active={view === "analytics"}>
+          <CompanyDashboardPanel />
+        </KeepAlive>
       </div>
     </DashShell>
   );
